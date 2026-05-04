@@ -9,7 +9,10 @@ A personal AI running coach powered by Claude Desktop. Analyzes your runs, plans
 ## What it does
 
 - 📊 **Analyzes runs** — HR, pace, power, true elevation per km from Strava
-- 📅 **Plans training** — Jack Daniels + 80/20 methodology, 4-phase periodization
+- 📅 **Plans training** — Jack Daniels + 80/20 methodology, 5-phase periodization (incl. beginner Run/Walk)
+- 🎯 **Multiple distances** — 5K / 10K / HM / Marathon, beginner to advanced
+- 🏃 **Race or fitness mode** — prepare for a specific race, or train for general form (with virtual time trials)
+- 🌐 **Multilingual** — pick your language, Claude responds in it
 - 💾 **Generates Garmin workouts** — ready-to-import JSON with proper structure
 - 🌤️ **Checks weather** — affects training advice and race-day strategy
 - 🧠 **Remembers context** — VDOT, races, goals, groups persist across sessions
@@ -92,7 +95,11 @@ The installer will:
   - Your name
   - Your city
   - City latitude/longitude (for weather)
-  - Your current VDOT (or leave blank)
+  - **Preferred language** (English / Polish / other — Claude will speak this language)
+  - **Target distance** (5K / 10K / HM / Marathon)
+  - **Level** (beginner / intermediate / advanced)
+  - **Mode** (race_prep if you have a race date, fitness otherwise)
+  - Your current VDOT (leave blank if unknown or beginner)
 
 ### Step 4 — Set up Strava API access
 
@@ -145,10 +152,10 @@ Only needed if you want Claude-generated workouts to sync to your Garmin watch.
 
 Edit these files in `Documents\running\`:
 
-1. **`profil.md`** — your running groups, preferred routes, training schedule
-2. **`forma.md`** — current VDOT, race predictors from your watch
-3. **`wyscigy.md`** — upcoming races and goals
-4. **`plan_aktualny.md`** — Claude will help generate this when you ask
+1. **`profile.md`** — your running groups, preferred routes, training schedule
+2. **`fitness.md`** — current VDOT, race predictors from your watch
+3. **`races.md`** — upcoming races and goals
+4. **`plan_current.md`** — Claude will help generate this when you ask
 
 You can edit in Notepad, VS Code, anything that handles text.
 
@@ -170,12 +177,13 @@ Try these prompts:
 
 ```
 Documents\running\
-├── profil.md              # Who you are, running groups, MCP tools
-├── forma.md               # VDOT, training paces, race predictors, threshold history
-├── wyscigy.md             # Race calendar, strategies, logistics
-├── plan_aktualny.md       # Current training plan
+├── profile.md              # Who you are, running groups, MCP tools
+├── fitness.md               # VDOT, training paces, race predictors, threshold history
+├── races.md             # Race calendar, strategies, logistics
+├── plan_current.md       # Current training plan
 ├── skills.md              # Claude behavior rules (DO NOT DELETE)
 ├── skills_phases/         # Per-phase training rules (Daniels)
+│   ├── phase0_run_walk.md       # Beginner only — Couch-to-5K
 │   ├── phase1_base.md
 │   ├── phase2_early_quality.md
 │   ├── phase3_late_quality.md
@@ -185,6 +193,33 @@ Documents\running\
     ├── archive\           # Completed workouts (move here after)
     └── templates\         # Reference Garmin JSON structure
 ```
+
+---
+
+## 🔄 Updating to a new version
+
+The repo is the source of truth for framework files (skills, phases, templates).
+Your personal data (profile, fitness, races, plan, workouts) stays untouched.
+
+```powershell
+# 1. Pull latest from repo
+cd path\to\running-agent
+git pull
+
+# 2. Preview changes (optional)
+.\sync.ps1 -DryRun
+
+# 3. Apply
+.\sync.ps1
+```
+
+What sync does:
+- **Overwrites** framework files (`skills.md`, `skills_phases/*`, Garmin templates)
+- **Preserves** your personal data (`profile.md`, `fitness.md`, `races.md`, `plan_current.md`)
+- **Migrates** legacy Polish file names automatically (`profil.md` -> `profile.md`, `faza*.md` removed, etc.)
+- **Never touches** your `garmin_workouts/upcoming/` or `archive/`
+
+After sync: **restart Claude Desktop** to pick up the new behavior rules.
 
 ---
 
@@ -221,13 +256,15 @@ If you can't run the installer:
 
 ## 🧠 Training methodology
 
-Based on **Jack Daniels' Running Formula** + **80/20 polarized training**:
+Based on **Jack Daniels' Running Formula** + **80/20 polarized training**.
+Adapts to your **target distance** (5K / 10K / HM / Marathon) and **level** (beginner / intermediate / advanced).
 
-### 4 phases
-- **Phase I — Base** (foundation): Easy + Strides
-- **Phase II — Early Quality** (R-pace + M)
-- **Phase III — Late Quality** (I-pace + T)
-- **Phase IV — Final + Taper** (T + M inserts, reduced volume)
+### 5 phases
+- **Phase 0 — Run/Walk** *(beginners only)*: 8–10 weeks Couch-to-5K, exits when you can run 30 min continuously
+- **Phase I — Base** (foundation): Easy + Strides, volume building
+- **Phase II — Early Quality**: R-pace + M-pace (parameters vary by distance)
+- **Phase III — Late Quality**: I-pace + T (parameters vary by distance)
+- **Phase IV — Taper**: volume reduction, intensity maintained (length varies by distance)
 
 Detailed rules per phase are in `skills_phases/phaseN_*.md`.
 
@@ -236,13 +273,22 @@ Detailed rules per phase are in `skills_phases/phaseN_*.md`.
 - 1× Quality accent — rotates: Intervals, Threshold, Reps+Strides, Hills, Fartlek, Tempo
 - 1× Long Run
 
-### Taper (HM) — last 10 days
-- Day -7: last short quality session
-- Days -6 to -2: easy + REST mix (NEVER 4 rest days in a row)
-- Day -1: ONE shakeout run (15-20 min + strides + 1× 1min @ race pace)
-- Day 0: RACE
+### Taper length by distance
+| Distance | Taper |
+|----------|-------|
+| 5K | 5–7 days |
+| 10K | 7 days |
+| HM | 10 days |
+| Marathon | 14–21 days |
 
-VDOT zones auto-calculated from race results, updated after every threshold workout.
+Last day: ONE shakeout run (15-20 min + strides + 1× 1min @ race pace).
+**Never 4 REST days in a row** during taper.
+
+### Race vs fitness mode
+- **race_prep** — phases count backwards from race date
+- **fitness** — no race? Cycle ends with a virtual time trial (e.g. parkrun or solo TT) → updates VDOT → starts new cycle
+
+VDOT zones auto-calculated from race or test results, updated after every threshold workout.
 
 ---
 
@@ -260,7 +306,7 @@ VDOT zones auto-calculated from race results, updated after every threshold work
 ## 🛡️ Privacy
 
 The `.gitignore` excludes all personal data:
-- `profil.md`, `forma.md`, `wyscigy.md`, `plan_aktualny.md`
+- `profile.md`, `fitness.md`, `races.md`, `plan_current.md`
 - `garmin_workouts/upcoming/`, `garmin_workouts/archive/`
 
 Only `skills.md`, `skills_phases/`, templates, and the installer are tracked. **Safe to fork and push your customized version**.

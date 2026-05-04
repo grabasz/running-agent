@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv profil.md profile.md)",
+      "Bash(mv forma.md fitness.md)",
+      "Bash(mv wyscigy.md races.md)",
+      "Bash(mv plan_aktualny.md plan_current.md)",
+      "Read(//d/d/git/running-agent/running-agent/**)",
+      "PowerShell(& \"D:\\\\git\\\\running-agent\\\\running-agent\\\\sync.ps1\" -DryRun)",
+      "PowerShell(& \"D:\\\\git\\\\running-agent\\\\running-agent\\\\sync.ps1\")"
+    ]
+  }
+}

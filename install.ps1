@@ -6,7 +6,7 @@
 #   1. Installs Node.js via winget (if not present)
 #   2. Installs MCP servers via npm
 #   3. Creates folder structure under Documents\running
-#   4. Copies starter files (profil, forma, wyscigy, plan, skills)
+#   4. Copies starter files (profile, fitness, races, plan, skills)
 #   5. Copies Garmin workout templates
 #   6. Updates claude_desktop_config.json
 #   7. Guides through Strava API setup
@@ -129,11 +129,12 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $starterDir = Join-Path $scriptDir "starter_files"
 
 $files = @(
-    "profil.md",
-    "forma.md",
-    "wyscigy.md",
-    "plan_aktualny.md",
+    "profile.md",
+    "fitness.md",
+    "races.md",
+    "plan_current.md",
     "skills.md",
+    "skills_phases\phase0_run_walk.md",
     "skills_phases\phase1_base.md",
     "skills_phases\phase2_early_quality.md",
     "skills_phases\phase3_late_quality.md",
@@ -270,19 +271,32 @@ Write-Host "   Let's fill in your basic profile so Claude knows who you are." -F
 Write-Host "   (You can skip any field and edit the files later)" -ForegroundColor Gray
 Write-Host ""
 
-$name    = Read-Host "   Your name"
-$city    = Read-Host "   Your city"
-$lat     = Read-Host "   City latitude (for weather, e.g. 50.0647 for Krakow)"
-$lon     = Read-Host "   City longitude (e.g. 19.9450 for Krakow)"
-$vdot    = Read-Host "   Your current VDOT (leave blank if unknown — check runsmartproject.com)"
+$name      = Read-Host "   Your name"
+$city      = Read-Host "   Your city"
+$lat       = Read-Host "   City latitude (for weather, e.g. 50.0647 for Krakow)"
+$lon       = Read-Host "   City longitude (e.g. 19.9450 for Krakow)"
+$language  = Read-Host "   Preferred language (English / Polish / other) [English]"
+if (-not $language) { $language = "English" }
+$distance  = Read-Host "   Target distance (5K / 10K / HM / Marathon) [10K]"
+if (-not $distance) { $distance = "10K" }
+$level     = Read-Host "   Level (beginner / intermediate / advanced) [intermediate]"
+if (-not $level) { $level = "intermediate" }
+$mode      = Read-Host "   Mode (race_prep / fitness) [fitness]"
+if (-not $mode) { $mode = "fitness" }
+$vdot      = Read-Host "   Your current VDOT (leave blank if unknown / beginner — check runsmartproject.com)"
 
-# Update profil.md
-$profilPath = Join-Path $InstallPath "profil.md"
-if (Test-Path $profilPath) {
-    $profil = Get-Content $profilPath -Raw
-    if ($name) { $profil = $profil -replace "\[Twoje Imię i Nazwisko\]", $name }
-    if ($city) { $profil = $profil -replace "\[Miasto\]", $city }
-    Set-Content $profilPath $profil -Encoding UTF8
+# Update profile.md
+$profilePath = Join-Path $InstallPath "profile.md"
+if (Test-Path $profilePath) {
+    $profileContent = Get-Content $profilePath -Raw
+    if ($name)     { $profileContent = $profileContent -replace "\[Your Name\]", $name }
+    if ($city)     { $profileContent = $profileContent -replace "\[City\]", $city }
+    if ($language) { $profileContent = $profileContent -replace "\[English / Polish / other\]", $language }
+    if ($distance) { $profileContent = $profileContent -replace "\[5K / 10K / HM / Marathon\]", $distance }
+    if ($level)    { $profileContent = $profileContent -replace "\[beginner / intermediate / advanced\]", $level }
+    if ($mode)     { $profileContent = $profileContent -replace "\[race_prep / fitness\]", $mode }
+    Set-Content $profilePath $profileContent -Encoding UTF8
+    Write-Info "Updated profile: language=$language, distance=$distance, level=$level, mode=$mode"
 }
 
 # Update skills.md with city coordinates
@@ -296,13 +310,13 @@ if ($lat -and $lon) {
     }
 }
 
-# Update forma.md with VDOT
+# Update fitness.md with VDOT (only the VDOT line, not the table headers)
 if ($vdot) {
-    $formaPath = Join-Path $InstallPath "forma.md"
-    if (Test-Path $formaPath) {
-        $forma = Get-Content $formaPath -Raw
-        $forma = $forma -replace "\[wartość\]", $vdot
-        Set-Content $formaPath $forma -Encoding UTF8
+    $fitnessPath = Join-Path $InstallPath "fitness.md"
+    if (Test-Path $fitnessPath) {
+        $fitness = Get-Content $fitnessPath -Raw
+        $fitness = $fitness -replace "\*\*\[value — or: unknown \(beginner\)\]\*\*", "**$vdot**"
+        Set-Content $fitnessPath $fitness -Encoding UTF8
         Write-Info "Updated VDOT: $vdot"
     }
 }
@@ -326,7 +340,7 @@ Write-Host "   2. Connect Strava — type this in Claude Desktop:" -ForegroundCo
 Write-Host "      'Connect my Strava account'" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "   3. Fill in your race calendar:" -ForegroundColor Gray
-Write-Host "      Edit: $InstallPath\wyscigy.md" -ForegroundColor DarkGray
+Write-Host "      Edit: $InstallPath\races.md" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "   4. Install Garmin workout importer for Chrome:" -ForegroundColor Gray
 Write-Host "      https://chromewebstore.google.com/detail/odgdfpclpfmmemajpmgfipfdfmjgihac" -ForegroundColor Cyan

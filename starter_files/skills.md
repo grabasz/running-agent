@@ -1,25 +1,41 @@
 # SKILLS — Claude Running Agent behavior rules
 
+## 🌐 Language
+Read `profile.md` at the start of every session.
+Use the language specified in the **"Preferred language"** field for ALL output:
+plans, analysis, Garmin workout descriptions, messages, everything.
+If the field is missing or unclear → default to English.
+Never mix languages within a single response.
+
+---
+
 ## 📅 Training plan phases (Jack Daniels)
 
 ```
+Phase 0   — RUN/WALK:       beginner only — build to running 5K continuously (8–10 weeks)
 Phase I   — BASE:           Easy + Strides, volume building
-Phase II  — EARLY QUALITY:  R-pace + T/M
-Phase III — LATE QUALITY:   I-pace + T
-Phase IV  — FINAL + TAPER:  T + M inserts + volume reduction
+Phase II  — EARLY QUALITY:  R-pace + T/M (parameters vary by distance)
+Phase III — LATE QUALITY:   I-pace + T (parameters vary by distance)
+Phase IV  — TAPER:          volume reduction, intensity maintained (length varies by distance)
 ```
 
-**Taper (half marathon) — last 10 days:**
-```
-Day -10: last medium-long or tempo
-Day  -9: easy
-Day  -8: REST
-Day  -7: last short quality session (e.g. 3x1km T-pace)
-Days -6 to -3: easy or REST
-Day  -2: REST or 20min very easy
-Day  -1: SHAKEOUT (the only one!) 15-20min + 4x strides
-Day   0: RACE
-```
+**Always read profile.md first** to determine: target distance, level, mode.
+- `beginner` → start at Phase 0, then Phase I
+- `fitness` (no race) → cycle ends with a virtual test run, then start new cycle with updated VDOT
+- `race_prep` → count phases backwards from race date
+
+**Taper length by distance:**
+| Dystans | Taper |
+|---------|-------|
+| 5K      | 5–7 days |
+| 10K     | 7 days |
+| HM      | 10 days |
+| Maraton | 14–21 days |
+
+**Virtual test (fitness mode only):**
+At the end of each cycle, schedule a time trial over the goal distance (or parkrun for 5K).
+Record result → update VDOT in fitness.md → start next cycle.
+
 **SHAKEOUT = ONE, the day before the race.** Not 2, not 3.
 If traveling: do the shakeout at the race venue.
 
@@ -170,21 +186,21 @@ https://chromewebstore.google.com/detail/odgdfpclpfmmemajpmgfipfdfmjgihac
 2. THEN: fetch laps + streams (HR, pace, power, altitude)
 3. Report elevation per km: `km X: +Ym / -Zm`
 4. Strava cadence = one-sided (single leg) → multiply ×2 for real cadence
-5. After threshold/intervals/race → update forma.md with new threshold data
+5. After threshold/intervals/race → update fitness.md with new threshold data
 
 ---
 
 ## 🦃 Lactate threshold tracking
 After every T/I workout or race: evaluate pace at stable HR = threshold
 Entry format: `DATE: X:XX/km @ Y bpm (VDOT~Z) — context`
-If threshold shifts >5sec/km from current T-pace → update VDOT and zones in forma.md
+If threshold shifts >5sec/km from current T-pace → update VDOT and zones in fitness.md
 
 ---
 
 ## 📂 Which file to read when
-- `profil.md` — who the user is, running groups, MCP tools (read once per session)
-- `forma.md` — VDOT, zones, predictors, threshold history (read when analyzing or planning)
-- `wyscigy.md` — race calendar, strategies, logistics (read when discussing races)
-- `plan_aktualny.md` — current plan (read for today's/tomorrow's workout questions)
+- `profile.md` — who the user is, language, running groups, MCP tools (read once per session)
+- `fitness.md` — VDOT, zones, predictors, threshold history (read when analyzing or planning)
+- `races.md` — race calendar, strategies, logistics (read when discussing races)
+- `plan_current.md` — current plan (read for today's/tomorrow's workout questions)
 - `skills.md` — this file (read when generating JSON or building training plans)
 - `garmin_workouts/templates/` — Garmin JSON reference
