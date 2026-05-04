@@ -1,0 +1,21 @@
+# Personal data — never commit these
+profil.md
+forma.md
+wyscigy.md
+plan_aktualny.md
+garmin_workouts/upcoming/
+garmin_workouts/archive/
+
+# Keep templates and skills
+!garmin_workouts/templates/
+!skills.md
+
+# Claude Desktop config (contains paths/credentials)
+claude_desktop_config.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

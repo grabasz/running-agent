@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "strava": {
+      "command": "npx",
+      "args": ["-y", "@r-huijts/strava-mcp-server"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\Users\\YOUR_USERNAME\\Documents\\running"
+      ]
+    }
+  }
+}
