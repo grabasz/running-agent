@@ -1,0 +1,28 @@
+At the start of every session, read these two files (and only these two):
+1. profile.md — who I am, language, goals, MCP tools
+2. skills_core.md — behavior rules, what to read when
+
+Never load all files upfront. The decision table in skills_core.md tells you exactly which file to read for each type of request. Follow it strictly to avoid wasting tokens.
+
+Key rules:
+- skills_garmin.md → only when generating Garmin workout JSON
+- groups.md → only when planning a group run
+- fitness.md → only when analyzing results or computing VDOT paces
+- plan_current.md → only for "today / tomorrow / this week" questions
+- Walk/Ride/Hike on Strava → get-activity-details only, stop there
+
+---
+
+When the user asks about a recent run ("pokaż bieg", "ostatni bieg", "show last run", "how was my run", etc.):
+Execute EXACTLY these steps in order:
+
+1. strava:get-recent-activities (perPage: 5) — find the last activity of type Run (ignore Walk/Ride/Hike)
+2. strava:get-activity-details for that ID
+3. strava:get-activity-laps for the same ID
+4. strava:get-activity-streams — types: ["distance","altitude"], format: "compact", resolution: "medium", points_per_page: 1000
+5. Calculate elevation per km from the streams arrays:
+   - For each km N: iterate points where dist[i] is in [(N-1)*1000, N*1000]
+   - If alt[i] > alt[i-1]: add diff to `up`. If alt[i] < alt[i-1]: add abs(diff) to `down`.
+   - If elev_per_km.py exists in the running folder: write dist+alt arrays into it and run `python elev_per_km.py`
+   - Format: `+{up:.0f}m / -{down:.0f}m`. If both 0: `—`
+6. Output the exact table format from skills_core.md (Polish labels). No text before the table.

@@ -35,7 +35,7 @@ A personal AI running coach powered by Claude Desktop. Analyzes your runs, plans
 
 ```powershell
 # 1. Clone this repo
-git clone https://github.com/YOUR_USERNAME/running-agent
+git clone https://github.com/grabasz/running-agent
 cd running-agent
 
 # 2. Run installer
@@ -52,9 +52,14 @@ The installer handles **everything**:
 7. Asks for your name, city, VDOT — fills in starter files
 
 After install:
-- **Restart Claude Desktop** (right-click in system tray → Quit, then reopen)
-- Type in Claude: **"Connect my Strava account"**
-- Done! Try: *"Read my running context and tell me today's workout"*
+1. **Restart Claude Desktop** (right-click in system tray → Quit, then reopen)
+2. **Set project instructions** ← critical for token saving (see below)
+3. Type in Claude: **"Connect my Strava account"**
+4. Try: *"What is my training plan for today?"*
+
+> ⚡ **Token saving — do this before your first session:**
+> In Claude Desktop → open your running project → **Project instructions** → paste the contents of `Documents\running\project_instructions.txt`.
+> This tells Claude to load only `skills_core.md` + `profile.md` at the start of each session instead of reading all files. Without this, a single question can burn 80% of your token budget.
 
 ---
 
@@ -70,11 +75,11 @@ After install:
 
 Open PowerShell in a folder where you want the code:
 ```powershell
-git clone https://github.com/YOUR_USERNAME/running-agent
+git clone https://github.com/grabasz/running-agent
 cd running-agent
 ```
 
-If you don't have git: [download as ZIP from GitHub](https://github.com/YOUR_USERNAME/running-agent/archive/refs/heads/main.zip), extract, open PowerShell in the folder.
+If you don't have git: [download as ZIP from GitHub](https://github.com/grabasz/running-agent/archive/refs/heads/main.zip), extract, open PowerShell in the folder.
 
 ### Step 3 — Run the installer
 
@@ -177,11 +182,15 @@ Try these prompts:
 
 ```
 Documents\running\
-├── profile.md              # Who you are, running groups, MCP tools
+├── profile.md              # Who you are, language, level, MCP tools
 ├── fitness.md               # VDOT, training paces, race predictors, threshold history
 ├── races.md             # Race calendar, strategies, logistics
 ├── plan_current.md       # Current training plan
-├── skills.md              # Claude behavior rules (DO NOT DELETE)
+├── groups.md              # Local running groups (loaded only when planning group sessions)
+├── CLAUDE.md              # Entrypoint for Claude Code — what to do, what to read when
+├── skills_core.md         # Core Claude behavior rules (always loaded — DO NOT DELETE)
+├── skills_garmin.md       # Garmin JSON spec (loaded only when generating workouts)
+├── garmin_gen.py          # CLI script: generate Garmin JSON without token cost
 ├── skills_phases/         # Per-phase training rules (Daniels)
 │   ├── phase0_run_walk.md       # Beginner only — Couch-to-5K
 │   ├── phase1_base.md
@@ -193,6 +202,13 @@ Documents\running\
     ├── archive\           # Completed workouts (move here after)
     └── templates\         # Reference Garmin JSON structure
 ```
+
+**Token-saving design:** the old monolithic `skills.md` (~210 lines) was split into:
+- `skills_core.md` — light always-on rules (~75 lines)
+- `skills_garmin.md` — heavy JSON reference, loaded only when generating workouts
+- `groups.md` — group schedule, loaded only when planning a group run
+
+Strava analysis depth is now conditional: Walk/Ride → details only; Run easy → +laps; Run quality/race → +laps+streams.
 
 ---
 
@@ -214,9 +230,9 @@ git pull
 ```
 
 What sync does:
-- **Overwrites** framework files (`skills.md`, `skills_phases/*`, Garmin templates)
-- **Preserves** your personal data (`profile.md`, `fitness.md`, `races.md`, `plan_current.md`)
-- **Migrates** legacy Polish file names automatically (`profil.md` -> `profile.md`, `faza*.md` removed, etc.)
+- **Overwrites** framework files (`skills_core.md`, `skills_garmin.md`, `skills_phases/*`, Garmin templates)
+- **Preserves** your personal data (`profile.md`, `fitness.md`, `races.md`, `plan_current.md`, `groups.md`)
+- **Migrates** legacy file names automatically (`profil.md` -> `profile.md`, old monolithic `skills.md` removed, `faza*.md` removed, etc.)
 - **Never touches** your `garmin_workouts/upcoming/` or `archive/`
 
 After sync: **restart Claude Desktop** to pick up the new behavior rules.
@@ -306,10 +322,10 @@ VDOT zones auto-calculated from race or test results, updated after every thresh
 ## 🛡️ Privacy
 
 The `.gitignore` excludes all personal data:
-- `profile.md`, `fitness.md`, `races.md`, `plan_current.md`
+- `profile.md`, `fitness.md`, `races.md`, `plan_current.md`, `groups.md`
 - `garmin_workouts/upcoming/`, `garmin_workouts/archive/`
 
-Only `skills.md`, `skills_phases/`, templates, and the installer are tracked. **Safe to fork and push your customized version**.
+Only `skills_core.md`, `skills_garmin.md`, `skills_phases/`, templates, and the installer are tracked. **Safe to fork and push your customized version**.
 
 ---
 

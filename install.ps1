@@ -1,6 +1,6 @@
 # ============================================================
 # Running Agent for Claude Desktop — Installer v2.0
-# https://github.com/[YOUR_USERNAME]/running-agent
+# https://github.com/grabasz/running-agent
 # ============================================================
 # What this does:
 #   1. Installs Node.js via winget (if not present)
@@ -133,7 +133,13 @@ $files = @(
     "fitness.md",
     "races.md",
     "plan_current.md",
-    "skills.md",
+    "groups.md",
+    "CLAUDE.md",
+    "skills_core.md",
+    "skills_garmin.md",
+    "garmin_gen.py",
+    "elev_per_km.py",
+    "project_instructions.txt",
     "skills_phases\phase0_run_walk.md",
     "skills_phases\phase1_base.md",
     "skills_phases\phase2_early_quality.md",
@@ -141,7 +147,8 @@ $files = @(
     "skills_phases\phase4_taper.md",
     "garmin_workouts\templates\REFERENCE_real_garmin_export.json",
     "garmin_workouts\upcoming\README.md",
-    "garmin_workouts\archive\README.md"
+    "garmin_workouts\archive\README.md",
+    ".claude\commands\bieg.md"
 )
 
 foreach ($file in $files) {
@@ -299,9 +306,9 @@ if (Test-Path $profilePath) {
     Write-Info "Updated profile: language=$language, distance=$distance, level=$level, mode=$mode"
 }
 
-# Update skills.md with city coordinates
+# Update skills_core.md with city coordinates
 if ($lat -and $lon) {
-    $skillsPath = Join-Path $InstallPath "skills.md"
+    $skillsPath = Join-Path $InstallPath "skills_core.md"
     if (Test-Path $skillsPath) {
         $skills = Get-Content $skillsPath -Raw
         $skills = $skills -replace "latitude, longitude", "$lat, $lon"
@@ -334,19 +341,24 @@ Write-Host ""
 Write-Host "   Next steps:" -ForegroundColor White
 Write-Host ""
 Write-Host "   1. Restart Claude Desktop (Quit from system tray, reopen)" -ForegroundColor Gray
-Write-Host "      Windows Store: right-click Claude in taskbar → Quit" -ForegroundColor DarkGray
+Write-Host "      Windows Store: right-click Claude in taskbar -> Quit" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "   2. Connect Strava — type this in Claude Desktop:" -ForegroundColor Gray
+Write-Host "   2. Set up PROJECT INSTRUCTIONS in Claude Desktop (critical for token saving!)" -ForegroundColor Yellow
+Write-Host "      Claude Desktop -> your project -> Project instructions" -ForegroundColor Gray
+Write-Host "      Paste the contents of: $InstallPath\project_instructions.txt" -ForegroundColor Cyan
+Write-Host "      (Tells Claude to load only skills_core.md + profile.md per session)" -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "   3. Connect Strava — type this in Claude Desktop:" -ForegroundColor Gray
 Write-Host "      'Connect my Strava account'" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   3. Fill in your race calendar:" -ForegroundColor Gray
+Write-Host "   4. Fill in your race calendar:" -ForegroundColor Gray
 Write-Host "      Edit: $InstallPath\races.md" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "   4. Install Garmin workout importer for Chrome:" -ForegroundColor Gray
+Write-Host "   5. Install Garmin workout importer for Chrome:" -ForegroundColor Gray
 Write-Host "      https://chromewebstore.google.com/detail/odgdfpclpfmmemajpmgfipfdfmjgihac" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "   5. Start your first session — say to Claude:" -ForegroundColor Gray
-Write-Host "      'Read my running context and tell me today's workout'" -ForegroundColor Cyan
+Write-Host "   6. Start your first session — say to Claude:" -ForegroundColor Gray
+Write-Host "      'What is my training plan for today?'" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "   Files installed at: $InstallPath" -ForegroundColor White
 Write-Host ""

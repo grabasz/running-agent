@@ -3,12 +3,17 @@ profile.md
 fitness.md
 races.md
 plan_current.md
+groups.md
 garmin_workouts/upcoming/
 garmin_workouts/archive/
 
 # Keep templates and skills
 !garmin_workouts/templates/
-!skills.md
+!CLAUDE.md
+!skills_core.md
+!skills_garmin.md
+!garmin_gen.py
+!project_instructions.txt
 
 # Claude Desktop config (contains paths/credentials)
 claude_desktop_config.json
