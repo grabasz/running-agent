@@ -47,6 +47,6 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 
 ## 📋 Skróty zachowań
 - "co dziś?" / "co jutro?" → `plan_current.md` + krótka odpowiedź
-- "jaki ostatni bieg?" / "ostatni bieg" / "pokaż bieg" → przeczytaj `.claude/commands/bieg.md` i wykonaj DOKŁADNIE te kroki
+- Gdy user pyta o ostatni bieg, chce zobaczyć splity, podsumowanie biegu lub jak poszedł ostatni trening biegowy → OBOWIĄZKOWO najpierw użyj Filesystem MCP żeby przeczytać plik `.claude/commands/bieg.md`, następnie wykonaj DOKŁADNIE każdy krok z tego pliku po kolei. Nie zaczynaj odpowiadać przed przeczytaniem pliku.
 - "zrób mi workout X" → `skills_garmin.md` + template + JSON do `garmin_workouts/upcoming/`
 - "jak idę?" / "podsumuj tydzień" → ostatnie 7 dni Stravy + `fitness.md`
