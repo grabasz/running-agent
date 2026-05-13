@@ -66,3 +66,28 @@ Napisz sekcję `## 📋 Analiza wyścigu` złożoną z dwóch części:
 **✅ Co poszło bardzo dobrze** — minimum 4 konkretne obserwacje poparte danymi z lapów/splits. Pisz rzeczowo, ale z energią. Nie wymieniaj rzeczy oczywistych ("dobiegłeś do mety").
 
 **🔧 Co warto rozważyć** — minimum 3 konkretne punkty z odniesieniem do kolejnych startów lub planu treningowego. Nie bądź ogólnikowy ("trenuj więcej") — wskaż konkretny km, konkretny HR, konkretne tempo. Zakończ jednym zdaniem spinającym całość w kontekście sezonu.
+
+**KROK 8** — AKTUALIZACJA PLIKÓW KONTEKSTU (tylko dla Wyścigu; wykonaj po KROK 7):
+
+Oblicz VDOT z wynikowego czasu i dystansu (użyj standardowych tabel Danielsa lub wzoru). Porównaj z aktualnym VDOT z `fitness.md`.
+
+**Jeśli nowy T-pace jest szybszy o >5s/km względem obecnego w `fitness.md`:**
+
+1. Zaktualizuj `fitness.md` przez **Edit** (nie Write) — podmień:
+   - Linię z VDOT i datą aktualizacji
+   - Wszystkie strefy: E-pace, M-pace, T-pace, I-pace, R-pace
+   - Dodaj wpis do sekcji "Historia progu mleczanowego" (nowa linia na końcu listy)
+   - Zaktualizuj "Race Predictors" jeśli sekcja istnieje
+
+2. Jeśli wynik to nowe PB na danym dystansie — zaktualizuj `profile.md` przez **Edit**:
+   - Podmień odpowiednią linię w sekcji `## PB`
+
+3. Po edycji wyświetl podsumowanie zmian:
+```
+📝 Zaktualizowano pliki:
+- fitness.md: VDOT [stary] → [nowy], T-pace [stary] → [nowy]
+- profile.md: PB HM [stary] → [nowy]  ← tylko jeśli PB
+```
+
+**Jeśli różnica T-pace ≤5s/km** — nie edytuj plików, napisz jedną linię:
+`ℹ️ Forma potwierdzona, próg bez zmian (różnica <5s/km — poniżej progu aktualizacji).`
