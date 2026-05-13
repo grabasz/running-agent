@@ -1,7 +1,7 @@
 # SKILLS CORE — Claude Running Agent (load every session)
 
-> Lightweight rules. If generating Garmin JSON → also read `skills_garmin.md`.
-> If planning a group session → also read `groups.md`.
+> Lekka wersja. Jeśli generujesz Garmin JSON → wczytaj `skills_garmin.md`.
+> Jeśli planujesz wspólny trening grupowy → wczytaj `groups.md`.
 
 ## 🌐 Language
 Read `profile.md` once per session. Use the language from **"Preferred language"**.
@@ -74,7 +74,7 @@ Laps — ZAWSZE każdy km osobno, nigdy nie grupuj:
 ```
 Wzn. per km = z altitude stream (`+Xm / -Xm` per km), NIE z `total_elevation_gain` lapu.
 Jeśli streams nie pobrane → pokaż tylko łączne +Xm w nagłówku, bez kolumny wzn.
-Weekly summary: horizontal table, one row per activity.
+Podsumowanie tygodnia: tabela pozioma, jeden wiersz na aktywność.
 
 ## 🏃 Garmin workout structure (always this shape)
 ```

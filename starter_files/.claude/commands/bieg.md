@@ -15,25 +15,54 @@ Pokaż ostatni bieg ze Stravy jako tabelkę. Wykonaj DOKŁADNIE te kroki po kole
 - format: "compact"
 - resolution: "medium"
 
-**KROK 5** — oblicz wzn. per km ze streams:
-Użyj arrays `distance` i `altitude` ze streams.
-Dla każdego km: przeiteruj próbki gdzie dist[i-1] >= (km-1)*1000 i dist[i] <= km*1000.
-Jeśli alt[i] > alt[i-1] → dodaj do `up`. Jeśli alt[i] < alt[i-1] → dodaj abs(diff) do `down`.
-Format wyniku: `+{up:.0f}m / -{down:.0f}m`. Jeśli up=0 i down=0 → `—`.
+**KROK 5** — oblicz wzn. per km używając skryptu Python:
+Weź arrays `distance` i `altitude` ze streams (jako listy liczb).
+Użyj narzędzia **Edit** (NIE Write) żeby podmienić w `elev_per_km.py` tylko linię `dist = [...]` i linię `alt = [...]` na nowe dane (zachowaj całą resztę pliku bez zmian):
+```
+dist = [<wartości z distance stream>]
+alt = [<wartości z altitude stream>]
+```
+Następnie uruchom `python elev_per_km.py` przez Bash i użyj jego outputu jako wartości wzn. per km.
 
 **KROK 6** — OUTPUT. Skopiuj ten format DOKŁADNIE (zamień wartości w nawiasach):
 
 🏃 [nazwa aktywności] — [dzień tygodnia po polsku] [DD.MM.YYYY]
-| 📏 Dystans   | [X.XX km]                         |
-| ⚡ Tempo śr. | [X:XX/km]                         |
-| ⏱️ Czas      | [HH:MM:SS]                        |
-| 💓 HR śr.    | [XXX bpm]                         |
-| 📈 Wznos.    | [+Xm łącznie]                     |
+| 📏 Dystans   | [X.XX km]                           |
+| ⚡ Tempo śr. | [X:XX/km]                           |
+| ⏱️ Czas      | [HH:MM:SS]                          |
+| 💓 HR śr.    | [XXX bpm]                           |
+| 📈 Wznos.    | [+Xm łącznie]                       |
 | 🏷️ Typ       | [Easy / Tempo / Interwały / Wyścig] |
 
-| km | tempo | HR  | wzn.      |
-|----|-------|-----|-----------|
-| 1  | X:XX  | XXX | +Xm / -Xm |
+Kadencja z lapów (`average_cadence`) to wartość jednonożna — ZAWSZE mnóż ×2 przed wyświetleniem (np. Strava 87.5 → pokazuj 175 spm).
+Moc (`average_watts`) pobierz z lapów bez przeliczania.
+
+| km | tempo | HR  | kad  | moc  | wzn.       | komentarz                        |
+|----|-------|-----|------|------|------------|----------------------------------|
+| 1  | X:XX  | XXX | XXX  | XXX W| +Xm / -Xm  | [komentarz — patrz wytyczne]     |
 [...każdy km osobno, nigdy nie grupuj...]
 
-Komentarz (opcjonalnie) dopiero PO tabelce. Żadnego tekstu przed tabelką.
+**Wytyczne do komentarzy per km — WAŻNE:**
+Komentarz to OBSERWACJA TRENERSKA, nie dowcip słowny ani pusta metafora.
+Pisz co faktycznie się dzieje w tym kilometrze — na podstawie kombinacji tempa, HR i wzn.
+- Wzrost HR bez zmiany tempa → "serce pracuje, nogi stoją" / "HR pnie się, tempo broni"
+- Szybki km po zjeździe → "zjazd skasowany z głową" / "grawitacja dołożyła"
+- Wolniejszy km na podbiegu → "podbieg wziął swoje" / "tempo upada, HR rośnie"
+- Km dołkowy bez wyraźnej przyczyny → "chwilowy dołek — jeden tylko" / "energia spadła"
+- Przyspieszenie w końcówce → "tu się robi wyścig" / "silnik odpala"
+- Bardzo spójna seria km → "taki rytm to robota treningowa" / "jak po sznurku"
+- Najszybszy km → "szczyt formy tego dnia" / "wszystko na stół"
+NIE pisz żartów słownych, NIE pisz pustych metafor (np. "jak jazz w ucho"), NIE przesadzaj z wykrzyknikami.
+Komentarz max 6–8 słów. Ton: konkretny, obserwacyjny, jakbyś mówił do biegacza tuż po linii mety.
+
+Żadnego tekstu przed tabelką.
+
+**KROK 7** — PODSUMOWANIE (tylko dla Wyścigu; dla Easy/Tempo/Interwałów pomiń):
+
+Przed napisaniem podsumowania załaduj `fitness.md` i `races.md` (jeśli nie były jeszcze czytane w tej sesji) — potrzebujesz kontekstu: cel wyścigu, poprzednie PB, T-pace, kolejne starty.
+
+Napisz sekcję `## 📋 Analiza wyścigu` złożoną z dwóch części:
+
+**✅ Co poszło bardzo dobrze** — minimum 4 konkretne obserwacje poparte danymi z lapów/splits. Pisz rzeczowo, ale z energią. Nie wymieniaj rzeczy oczywistych ("dobiegłeś do mety").
+
+**🔧 Co warto rozważyć** — minimum 3 konkretne punkty z odniesieniem do kolejnych startów lub planu treningowego. Nie bądź ogólnikowy ("trenuj więcej") — wskaż konkretny km, konkretny HR, konkretne tempo. Zakończ jednym zdaniem spinającym całość w kontekście sezonu.
