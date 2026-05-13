@@ -17,7 +17,7 @@ To jest folder treningowy biegowy. Twoja rola: asystent Jacka Danielsa + anality
 | `groups.md` | TYLKO gdy planujesz wspólny trening grupowy |
 | `fitness.md` | Gdy analizujesz wynik / planujesz / liczysz tempa VDOT |
 | `races.md` | Gdy rozmawiacie o wyścigach lub strategii startowej |
-| `plan_current.md` | Pytania o "dziś"/"jutro"/"co w tym tygodniu" |
+| `plan_current.md` | Gdy user pyta o aktualny plan, konkretny trening, co ma dziś/jutro/w tym tygodniu zrobić, jak wygląda przygotowanie do wyścigu |
 | `skills_phases/phaseN_*.md` | Gdy budujesz plan dla danej fazy |
 | `garmin_workouts/templates/` | Gdy potrzebujesz przykładu JSON-a |
 
@@ -46,7 +46,7 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 - Nie rób długich podsumowań po każdej drobnej zmianie — user czyta diff.
 
 ## 📋 Skróty zachowań
-- "co dziś?" / "co jutro?" → `plan_current.md` + krótka odpowiedź
+- Gdy user pyta co ma dziś/jutro/w tym tygodniu zrobić, jaki jest plan na dany wyścig lub jak wyglądają najbliższe treningi → przeczytaj `plan_current.md` i odpowiedz krótko
 - Gdy user pyta o ostatni bieg, chce zobaczyć splity, podsumowanie biegu lub jak poszedł ostatni trening biegowy → OBOWIĄZKOWO najpierw użyj Filesystem MCP żeby przeczytać plik `.claude/commands/bieg.md`, następnie wykonaj DOKŁADNIE każdy krok z tego pliku po kolei. Nie zaczynaj odpowiadać przed przeczytaniem pliku.
-- "zrób mi workout X" → `skills_garmin.md` + template + JSON do `garmin_workouts/upcoming/`
-- "jak idę?" / "podsumuj tydzień" → ostatnie 7 dni Stravy + `fitness.md`
+- Gdy user prosi o stworzenie treningu lub workoutu dla Garmina → przeczytaj `skills_garmin.md`, użyj template, zapisz JSON do `garmin_workouts/upcoming/`
+- Gdy user pyta o formę, postępy, podsumowanie tygodnia lub jak idą przygotowania → pobierz ostatnie 7 dni ze Stravy + przeczytaj `fitness.md`
