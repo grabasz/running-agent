@@ -16,13 +16,13 @@ Pokaż ostatni bieg ze Stravy jako tabelkę. Wykonaj DOKŁADNIE te kroki po kole
 - resolution: "medium"
 
 **KROK 5** — oblicz wzn. per km używając skryptu Python:
-Weź arrays `distance` i `altitude` ze streams (jako listy liczb).
-Użyj narzędzia **Edit** (NIE Write) żeby podmienić w `elev_per_km.py` tylko linię `dist = [...]` i linię `alt = [...]` na nowe dane (zachowaj całą resztę pliku bez zmian):
+Weź arrays `distance` i `altitude` ze streams (wszystkie strony połączone w jedną tablicę).
+Uruchom przez Bash:
 ```
-dist = [<wartości z distance stream>]
-alt = [<wartości z altitude stream>]
+python elev_per_km.py '<dist_json>' '<alt_json>'
 ```
-Następnie uruchom `python elev_per_km.py` przez Bash i użyj jego outputu jako wartości wzn. per km.
+gdzie `<dist_json>` i `<alt_json>` to pełne tablice jako JSON string (np. `[0.7,7.2,...]`).
+Użyj outputu jako wartości wzn. per km.
 
 **KROK 6** — OUTPUT. Skopiuj ten format DOKŁADNIE (zamień wartości w nawiasach):
 

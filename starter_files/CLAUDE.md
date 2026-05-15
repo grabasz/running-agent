@@ -46,7 +46,7 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 - Nie rób długich podsumowań po każdej drobnej zmianie — user czyta diff.
 
 ## 📋 Skróty zachowań
-- Gdy user pyta co ma dziś/jutro/w tym tygodniu zrobić, jaki jest plan na dany wyścig lub jak wyglądają najbliższe treningi → przeczytaj `plan_current.md` i odpowiedz krótko
+- Gdy user pyta co ma dziś/jutro/w tym tygodniu zrobić, jaki jest plan na dany wyścig lub jak wyglądają najbliższe treningi → pobierz pogodę (`weather:weather_forecast`) + przeczytaj `plan_current.md` i odpowiedz krótko
 - Gdy user pyta o ostatni bieg, chce zobaczyć splity, podsumowanie biegu lub jak poszedł ostatni trening biegowy → OBOWIĄZKOWO najpierw użyj Filesystem MCP żeby przeczytać plik `.claude/commands/bieg.md`, następnie wykonaj DOKŁADNIE każdy krok z tego pliku po kolei. Nie zaczynaj odpowiadać przed przeczytaniem pliku.
 - Gdy user prosi o stworzenie treningu lub workoutu dla Garmina → przeczytaj `skills_garmin.md`, użyj template, zapisz JSON do `garmin_workouts/upcoming/`
 - Gdy user pyta o formę, postępy, podsumowanie tygodnia lub jak idą przygotowania → pobierz ostatnie 7 dni ze Stravy + przeczytaj `fitness.md`

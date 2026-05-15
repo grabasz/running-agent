@@ -239,16 +239,16 @@ try {
 
     $newServers = @{
         "strava" = [PSCustomObject]@{
-            command = "npx"
-            args    = @("-y", "@r-huijts/strava-mcp-server")
+            command = "cmd"
+            args    = @("/c", "npx", "-y", "@r-huijts/strava-mcp-server")
         }
         "memory" = [PSCustomObject]@{
-            command = "npx"
-            args    = @("-y", "@modelcontextprotocol/server-memory")
+            command = "cmd"
+            args    = @("/c", "npx", "-y", "@modelcontextprotocol/server-memory")
         }
         "filesystem" = [PSCustomObject]@{
-            command = "npx"
-            args    = @("-y", "@modelcontextprotocol/server-filesystem", $InstallPath)
+            command = "cmd"
+            args    = @("/c", "npx", "-y", "@modelcontextprotocol/server-filesystem", $InstallPath)
         }
     }
 
