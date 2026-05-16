@@ -12,13 +12,26 @@
 # ============================================================
 
 param(
-    [string]$InstallPath = "$env:USERPROFILE\Documents\running",
+    [string]$TargetDirectory = "",
     [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $starterDir = Join-Path $scriptDir "starter_files"
+
+# Resolve install path: explicit param > .install_path file > default
+if ($TargetDirectory) {
+    $InstallPath = $TargetDirectory
+} else {
+    $pathFile = Join-Path $scriptDir ".install_path"
+    if (Test-Path $pathFile) {
+        $InstallPath = (Get-Content $pathFile -Raw -Encoding UTF8).Trim()
+    } else {
+        $InstallPath = "$env:USERPROFILE\Documents\running"
+        Write-Host "  No .install_path found — using default: $InstallPath" -ForegroundColor Yellow
+    }
+}
 
 function Write-Action($verb, $what, $color = "Cyan") {
     $prefix = if ($DryRun) { "[DRY RUN] " } else { "" }

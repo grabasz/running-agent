@@ -335,6 +335,11 @@ if ($vdot) {
 
 Write-OK "Profile setup complete"
 
+# Save install path so sync.ps1 knows where to sync next time
+$pathFile = Join-Path $scriptDir ".install_path"
+Set-Content $pathFile $InstallPath -Encoding UTF8
+Write-Info "Install path saved → .install_path (sync.ps1 will use this automatically)"
+
 # ============================================================
 # DONE
 # ============================================================

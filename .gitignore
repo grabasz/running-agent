@@ -15,6 +15,9 @@ garmin_workouts/archive/
 !garmin_gen.py
 !project_instructions.txt
 
+# Local install path (written by install.ps1, read by sync.ps1)
+.install_path
+
 # Claude Desktop config (contains paths/credentials)
 claude_desktop_config.json
 
