@@ -1,97 +1,33 @@
-# SKILLS CORE — Claude Running Agent (load every session)
+# SKILLS CORE — Router (load ONCE per session)
 
-> Lekka wersja. Jeśli generujesz Garmin JSON → wczytaj `skills_garmin.md`.
-> Jeśli planujesz wspólny trening grupowy → wczytaj `groups.md`.
+> Universal rules and file map only.
+> Activity logic → `skills_activity.md` | Planning logic → `skills_planning.md`
 
-## 🌐 Language
-Read `profile.md` once per session. Use the language from **"Preferred language"**.
-If missing → English. Never mix languages within one response.
+## Language
+Read `profile.md` once per session. Use the language from "Preferred language". Never mix languages.
 
-## 📅 Training plan phases (Jack Daniels)
-```
-Phase 0 — RUN/WALK (beginner only, build to 5K continuous, 8–10 wk)
-Phase I — BASE (Easy + Strides)
-Phase II — EARLY QUALITY (R + T/M)
-Phase III — LATE QUALITY (I + T)
-Phase IV — TAPER (5K:5–7d | 10K:7d | HM:10d | M:14–21d)
-```
-Mode (from profile): `beginner` → Phase 0+I. `fitness` → cycle ends with virtual TT → update VDOT. `race_prep` → count backwards from race date.
-**SHAKEOUT = ONE, day before race.** If traveling — at race venue.
+## Dates
+Verify via `weather:weather_forecast` → `current.time`. Before any plan: state 3 control dates (first/middle/last) and confirm.
 
-## 📊 Weekly structure (Daniels + 80/20)
-2× Easy + 1× Quality (rotate) + 1× Long. Recovery week every 3–4 wk: −20–30% volume, no hard accents.
-Quality rotation: I | T | R+Strides | Hills | Tempo | Fartlek | LongRun+M
-VDOT zones: E (aerobic) | M (race economy) | T (lactate clear) | I (VO2max) | R (speed)
-Update VDOT after every race: https://runsmartproject.com/calculator/
-
-## 📅 Dates and weekdays
-Verify via `weather:weather_forecast` → `current.time`. Before any plan: state 3 control dates (first/middle/last) out loud and confirm.
-
-## 🌤️ Weather
+## Weather
 Tool: `weather:weather_forecast` (Open-Meteo, Celsius, timezone=local).
-Output:
-```
-🌤️ [City] — [Day] [Date]
-| 🌡️ Now | X°C | Ymm | Z km/h |
-| ☀️ Tomorrow | min–max°C | P% | W km/h |
-```
-Icons: 0-1=☀️ 2-3=🌤️ 51-67=🌧️ 71-77=❄️ 80-82=🌦️ 95+=⚡
-Effects: >20°C=+5-8bpm HR | <5°C=layer up | wind>20kmh=affects pace
-NEVER show °F.
+WMO icons: 0-1=☀️ 2-3=🌤️ 51-67=🌧️ 71-77=❄️ 80-82=🌦️ 95+=⚡
+Running effects: >20°C → +5-8bpm HR | <5°C → layer up | wind >20km/h → affects pace. Never show °F.
 
-## 🦉 Strava analysis — conditional depth
-1. ALWAYS first: `strava:get-activity-details` (description = race times/gear/feelings).
-2. Then decide depth by activity type:
-   - **Walk / Ride / Hike** → details only, stop.
-   - **Run, easy < 5km / shakeout** → + laps.
-   - **Run quality / race / long** → + laps + streams (`format: "compact"`, `resolution: "low"` unless deep dive needed).
-3. Strava cadence = one-side → ×2 for real cadence.
-4. Elevation per km only when streams fetched — run `elev_per_km.py` (write dist+alt arrays, then `python elev_per_km.py`).
-5. After T/I/race → update `fitness.md` if threshold shifted >5s/km from current T-pace.
+## File map — what to load and when
+| File | When |
+|------|------|
+| `profile.md` | ONCE per session |
+| `skills_activity.md` | Analyzing runs, laps, streams, splits, HR, race results |
+| `skills_planning.md` | Planning, weekly structure, volume, phases |
+| `skills_garmin.md` | Generating Garmin Connect JSON |
+| `skills_phases/phaseN_*.md` | Building a plan for a specific phase (N=0–4) |
+| `fitness.md` | Analyzing form, computing VDOT paces |
+| `races.md` | Races, race strategy |
+| `plan_current.md` | Current plan, today/tomorrow/this week |
+| `groups.md` | Group training sessions |
+| `volume_log.md` | Weekly volume — <7 days old: read it; older: run `/volume` |
 
-## 🦃 Threshold tracking
-Entry format in `fitness.md`: `DATE: X:XX/km @ Y bpm (VDOT~Z) — context`
-Shift >5s/km vs current T-pace → recompute VDOT + zones.
-
-## 🏃 Wyświetlanie aktywności
-**UŻYJ DOKŁADNIE TEGO FORMATU — bez odchyleń, dodatkowych pól ani pogrubień.**
-
-Pojedynczy bieg ("jaki ostatni bieg?" / "pokaż ostatni"):
-```
-🏃 [Nazwa aktywności] — [Dzień tygodnia] [DD.MM.YYYY]
-| 📏 Dystans   | X.XX km                           |
-| ⚡ Tempo śr. | X:XX/km                           |
-| ⏱️ Czas      | HH:MM:SS                          |
-| 💓 HR śr.    | XXX bpm                           |
-| 📈 Wznos.    | +Xm                               |
-| 🏷️ Typ       | Easy / Tempo / Interwały / Wyścig |
-```
-Laps — ZAWSZE każdy km osobno, nigdy nie grupuj:
-```
-| km | tempo | HR  | wzn.      |
-|----|-------|-----|-----------|
-|  1 | X:XX  | XXX | +Xm / -Xm |
-```
-Wzn. per km = z altitude stream (`+Xm / -Xm` per km), NIE z `total_elevation_gain` lapu.
-Jeśli streams nie pobrane → pokaż tylko łączne +Xm w nagłówku, bez kolumny wzn.
-Podsumowanie tygodnia: tabela pozioma, jeden wiersz na aktywność.
-
-## 🏃 Garmin workout structure (always this shape)
-```
-1. WU time-based (auto end)
-2. WU lap.button (athlete decides)
-3. MAIN (intervals/tempo/group)
-4. COOLDOWN lap.button (press at home)
-```
-Group run: WU lap.button = "run to meeting point, press LAP".
-**For full JSON spec → load `skills_garmin.md`.**
-
-## 📂 Files
-- `profile.md` — identity, language, level (read once/session)
-- `fitness.md` — VDOT, zones, threshold history (when analyzing/planning)
-- `races.md` — race calendar (when discussing races)
-- `plan_current.md` — active plan (today/tomorrow questions)
-- `groups.md` — running groups schedule (only when planning group sessions)
-- `skills_core.md` — this file
-- `skills_garmin.md` — Garmin JSON reference (only when generating workout JSON)
-- `garmin_workouts/templates/` — JSON examples
+## Rule
+Do not load a file unless required by the type of question.
+Activity logic and planning logic are separate — do not mix in a single load.

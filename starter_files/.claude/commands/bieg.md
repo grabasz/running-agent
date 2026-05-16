@@ -1,93 +1,92 @@
-Pokaż ostatni bieg ze Stravy jako tabelkę. Wykonaj DOKŁADNIE te kroki po kolei:
+Show the last Strava run as a table. Execute EXACTLY these steps in order:
 
-**KROK 1** — pobierz listę:
-`strava:get-recent-activities` (perPage: 5) → znajdź ostatnią aktywność typu Run (ignoruj Walk/Ride/Hike).
+**STEP 1** — get list:
+`strava:get-recent-activities` (perPage: 5) → find the last activity of type Run (ignore Walk/Ride/Hike).
 
-**KROK 2** — szczegóły:
-`strava:get-activity-details` dla ID z kroku 1.
+**STEP 2** — details:
+`strava:get-activity-details` for the ID from step 1.
 
-**KROK 3** — laps:
-`strava:get-activity-laps` dla tego samego ID.
+**STEP 3** — laps:
+`strava:get-activity-laps` for the same ID.
 
-**KROK 4** — streams (ZAWSZE dla biegu):
-`strava:get-activity-streams` z parametrami:
+**STEP 4** — streams (ALWAYS for a run):
+`strava:get-activity-streams` with parameters:
 - streamTypes: ["distance", "altitude"]
 - format: "compact"
 - resolution: "medium"
 
-**KROK 5** — oblicz wzn. per km używając skryptu Python:
-Weź arrays `distance` i `altitude` ze streams (wszystkie strony połączone w jedną tablicę).
-Uruchom przez Bash:
+**STEP 5** — calculate elevation per km using Python script:
+Take the `distance` and `altitude` arrays from streams (all pages merged into one array).
+Run via Bash:
 ```
 python elev_per_km.py '<dist_json>' '<alt_json>'
 ```
-gdzie `<dist_json>` i `<alt_json>` to pełne tablice jako JSON string (np. `[0.7,7.2,...]`).
-Użyj outputu jako wartości wzn. per km.
+where `<dist_json>` and `<alt_json>` are the full arrays as JSON strings (e.g. `[0.7,7.2,...]`).
+Use the output as elevation per km values.
 
-**KROK 6** — OUTPUT. Skopiuj ten format DOKŁADNIE (zamień wartości w nawiasach):
+**STEP 6** — OUTPUT. Copy this format EXACTLY (replace values in brackets).
+Output labels in the user's language from profile.md. No text before the table.
 
-🏃 [nazwa aktywności] — [dzień tygodnia po polsku] [DD.MM.YYYY]
-| 📏 Dystans   | [X.XX km]                           |
-| ⚡ Tempo śr. | [X:XX/km]                           |
-| ⏱️ Czas      | [HH:MM:SS]                          |
-| 💓 HR śr.    | [XXX bpm]                           |
-| 📈 Wznos.    | [+Xm łącznie]                       |
-| 🏷️ Typ       | [Easy / Tempo / Interwały / Wyścig] |
+🏃 [activity name] — [weekday] [DD.MM.YYYY]
+| 📏 Distance  | [X.XX km]                         |
+| ⚡ Avg pace  | [X:XX/km]                         |
+| ⏱️ Time      | [HH:MM:SS]                        |
+| 💓 Avg HR    | [XXX bpm]                         |
+| 📈 Elevation | [+Xm total]                       |
+| 🏷️ Type      | [Easy / Tempo / Intervals / Race] |
 
-Kadencja z lapów (`average_cadence`) to wartość jednonożna — ZAWSZE mnóż ×2 przed wyświetleniem (np. Strava 87.5 → pokazuj 175 spm).
-Moc (`average_watts`) pobierz z lapów bez przeliczania.
+Cadence from laps (`average_cadence`) is one-side — ALWAYS multiply ×2 before displaying (e.g. Strava 87.5 → show 175 spm).
+Power (`average_watts`) from laps, no conversion.
 
-| km | tempo | HR  | kad  | moc  | wzn.       | komentarz                        |
-|----|-------|-----|------|------|------------|----------------------------------|
-| 1  | X:XX  | XXX | XXX  | XXX W| +Xm / -Xm  | [komentarz — patrz wytyczne]     |
-[...każdy km osobno, nigdy nie grupuj...]
+| km | pace  | HR  | cad  | pwr   | elev       | comment                     |
+|----|-------|-----|------|-------|-----------|-----------------------------|
+| 1  | X:XX  | XXX | XXX  | XXX W | +Xm / -Xm | [comment — see guidelines]  |
+[...every km separately, never group...]
 
-**Wytyczne do komentarzy per km — WAŻNE:**
-Komentarz to OBSERWACJA TRENERSKA, nie dowcip słowny ani pusta metafora.
-Pisz co faktycznie się dzieje w tym kilometrze — na podstawie kombinacji tempa, HR i wzn.
-- Wzrost HR bez zmiany tempa → "serce pracuje, nogi stoją" / "HR pnie się, tempo broni"
-- Szybki km po zjeździe → "zjazd skasowany z głową" / "grawitacja dołożyła"
-- Wolniejszy km na podbiegu → "podbieg wziął swoje" / "tempo upada, HR rośnie"
-- Km dołkowy bez wyraźnej przyczyny → "chwilowy dołek — jeden tylko" / "energia spadła"
-- Przyspieszenie w końcówce → "tu się robi wyścig" / "silnik odpala"
-- Bardzo spójna seria km → "taki rytm to robota treningowa" / "jak po sznurku"
-- Najszybszy km → "szczyt formy tego dnia" / "wszystko na stół"
-NIE pisz żartów słownych, NIE pisz pustych metafor (np. "jak jazz w ucho"), NIE przesadzaj z wykrzyknikami.
-Komentarz max 6–8 słów. Ton: konkretny, obserwacyjny, jakbyś mówił do biegacza tuż po linii mety.
+**Per-km comment guidelines — IMPORTANT:**
+A COACHING OBSERVATION — not wordplay or empty metaphor.
+Write what is actually happening in that km based on pace + HR + elevation.
+- HR rising, pace holding → "heart working, legs holding" / "HR climbing, pace defending"
+- Fast km after descent → "descent cashed in" / "gravity contributed"
+- Slower km on climb → "hill took its toll" / "pace drops, HR rises"
+- Unexplained dip → "brief energy dip" / "one-off low"
+- Late acceleration → "race mode on" / "engine firing"
+- Consistent series → "textbook rhythm" / "like clockwork"
+- Fastest km → "peak of the day" / "all in"
+Do NOT write wordplay, empty metaphors, or excessive exclamation marks.
+Max 6–8 words. Tone: direct, observational, like talking to the runner right after the finish line.
 
-Żadnego tekstu przed tabelką.
+**STEP 7** — RACE SUMMARY (only for Race type; skip for Easy/Tempo/Intervals):
 
-**KROK 7** — PODSUMOWANIE (tylko dla Wyścigu; dla Easy/Tempo/Interwałów pomiń):
+Before writing, load `fitness.md` and `races.md` (if not already read this session).
 
-Przed napisaniem podsumowania załaduj `fitness.md` i `races.md` (jeśli nie były jeszcze czytane w tej sesji) — potrzebujesz kontekstu: cel wyścigu, poprzednie PB, T-pace, kolejne starty.
+Write a `## 📋 Race analysis` section with two parts:
 
-Napisz sekcję `## 📋 Analiza wyścigu` złożoną z dwóch części:
+**✅ What went very well** — minimum 4 specific observations backed by lap/split data. Factual but energetic. Don't state the obvious.
 
-**✅ Co poszło bardzo dobrze** — minimum 4 konkretne obserwacje poparte danymi z lapów/splits. Pisz rzeczowo, ale z energią. Nie wymieniaj rzeczy oczywistych ("dobiegłeś do mety").
+**🔧 What to consider** — minimum 3 specific points referencing upcoming races or the training plan. Name a specific km, HR, or pace. End with one sentence tying it to the season.
 
-**🔧 Co warto rozważyć** — minimum 3 konkretne punkty z odniesieniem do kolejnych startów lub planu treningowego. Nie bądź ogólnikowy ("trenuj więcej") — wskaż konkretny km, konkretny HR, konkretne tempo. Zakończ jednym zdaniem spinającym całość w kontekście sezonu.
+**STEP 8** — UPDATE CONTEXT FILES (only for Race; execute after STEP 7):
 
-**KROK 8** — AKTUALIZACJA PLIKÓW KONTEKSTU (tylko dla Wyścigu; wykonaj po KROK 7):
+Calculate VDOT from result time and distance. Compare with current VDOT from `fitness.md`.
 
-Oblicz VDOT z wynikowego czasu i dystansu (użyj standardowych tabel Danielsa lub wzoru). Porównaj z aktualnym VDOT z `fitness.md`.
+**If new T-pace is faster by >5s/km than current in `fitness.md`:**
 
-**Jeśli nowy T-pace jest szybszy o >5s/km względem obecnego w `fitness.md`:**
+1. Update `fitness.md` via **Edit** (not Write) — replace:
+   - Line with VDOT and update date
+   - All zones: E-pace, M-pace, T-pace, I-pace, R-pace
+   - Add entry to threshold history section (new line at end)
+   - Update Race Predictors if section exists
 
-1. Zaktualizuj `fitness.md` przez **Edit** (nie Write) — podmień:
-   - Linię z VDOT i datą aktualizacji
-   - Wszystkie strefy: E-pace, M-pace, T-pace, I-pace, R-pace
-   - Dodaj wpis do sekcji "Historia progu mleczanowego" (nowa linia na końcu listy)
-   - Zaktualizuj "Race Predictors" jeśli sekcja istnieje
+2. If result is a new PB for that distance — update `profile.md` via **Edit**:
+   - Replace the relevant line in the `## PB` section
 
-2. Jeśli wynik to nowe PB na danym dystansie — zaktualizuj `profile.md` przez **Edit**:
-   - Podmień odpowiednią linię w sekcji `## PB`
-
-3. Po edycji wyświetl podsumowanie zmian:
+3. After editing, display:
 ```
-📝 Zaktualizowano pliki:
-- fitness.md: VDOT [stary] → [nowy], T-pace [stary] → [nowy]
-- profile.md: PB HM [stary] → [nowy]  ← tylko jeśli PB
+📝 Updated:
+- fitness.md: VDOT [old] → [new], T-pace [old] → [new]
+- profile.md: PB HM [old] → [new]  ← only if PB
 ```
 
-**Jeśli różnica T-pace ≤5s/km** — nie edytuj plików, napisz jedną linię:
-`ℹ️ Forma potwierdzona, próg bez zmian (różnica <5s/km — poniżej progu aktualizacji).`
+**If T-pace difference ≤5s/km** — do not edit, write one line:
+`ℹ️ Form confirmed, threshold unchanged (difference <5s/km — below update threshold).`

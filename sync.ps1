@@ -112,16 +112,20 @@ Write-Host "[2/4] Updating framework files (skills + phases)..." -ForegroundColo
 $frameworkFiles = @(
     "CLAUDE.md",
     "skills_core.md",
+    "skills_activity.md",
+    "skills_planning.md",
     "skills_garmin.md",
     "garmin_gen.py",
     "elev_per_km.py",
+    "scripts\weekly_volume.py",
     "skills_phases\phase0_run_walk.md",
     "skills_phases\phase1_base.md",
     "skills_phases\phase2_early_quality.md",
     "skills_phases\phase3_late_quality.md",
     "skills_phases\phase4_taper.md",
     "garmin_workouts\templates\REFERENCE_real_garmin_export.json",
-    ".claude\commands\bieg.md"
+    ".claude\commands\bieg.md",
+    ".claude\commands\volume.md"
 )
 
 foreach ($file in $frameworkFiles) {

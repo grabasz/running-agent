@@ -1,52 +1,58 @@
 # CLAUDE.md — Running Agent (Claude Code entrypoint)
 
-To jest folder treningowy biegowy. Twoja rola: asystent Jacka Danielsa + analityk Stravy + generator workoutów Garmin.
+This is a running training folder. Your role: Jack Daniels coach + Strava analyst + Garmin workout generator.
 
-## 🎯 Co tu robisz
-1. **Planujesz treningi** wg metodyki Jacka Danielsa (4 fazy + Phase 0 dla początkujących).
-2. **Analizujesz aktywności ze Stravy** — głębokość zależna od typu (patrz `skills_core.md`).
-3. **Generujesz JSON dla Garmin Connect** — pełna spec w `skills_garmin.md`.
-4. **Aktualizujesz `fitness.md`** po każdej istotnej sesji T/I/wyścigu (jeśli próg się przesuwa >5s/km).
+## 🎯 What you do
+1. **Plan training** following Jack Daniels methodology (4 phases + Phase 0 for beginners).
+2. **Analyze Strava activities** — depth depends on type (see `skills_activity.md`).
+3. **Generate JSON for Garmin Connect** — full spec in `skills_garmin.md`.
+4. **Update `fitness.md`** after every meaningful T/I/race session (if threshold shifts >5s/km).
 
-## 📂 Co czytać i kiedy (oszczędzanie tokenów!)
-| Plik | Kiedy ładować |
-|------|---------------|
-| `profile.md` | RAZ na sesję — kim jest user, język, poziom |
-| `skills_core.md` | RAZ na sesję — podstawowe reguły zachowania |
-| `skills_garmin.md` | TYLKO gdy generujesz workout JSON dla Garmina |
-| `groups.md` | TYLKO gdy planujesz wspólny trening grupowy |
-| `fitness.md` | Gdy analizujesz wynik / planujesz / liczysz tempa VDOT |
-| `races.md` | Gdy rozmawiacie o wyścigach lub strategii startowej |
-| `plan_current.md` | Gdy user pyta o aktualny plan, konkretny trening, co ma dziś/jutro/w tym tygodniu zrobić, jak wygląda przygotowanie do wyścigu |
-| `skills_phases/phaseN_*.md` | Gdy budujesz plan dla danej fazy |
-| `garmin_workouts/templates/` | Gdy potrzebujesz przykładu JSON-a |
+## 📂 What to read and when (token efficiency!)
+| File | When to load |
+|------|--------------|
+| `profile.md` | ONCE per session — who the user is, language, level |
+| `skills_core.md` | ONCE per session — router and universal rules only |
+| `skills_activity.md` | Analyzing a run, laps, streams, splits, HR, race result |
+| `skills_planning.md` | Planning training, weekly structure, volume, phases |
+| `skills_garmin.md` | ONLY when generating Garmin workout JSON |
+| `groups.md` | ONLY when planning a group training session |
+| `fitness.md` | When analyzing results or computing VDOT paces |
+| `races.md` | When discussing races or race strategy |
+| `plan_current.md` | When asked about current plan, today/tomorrow/this week |
+| `volume_log.md` | Before planning — check age; older than 7 days → run `/volume` |
+| `skills_phases/phaseN_*.md` | When building a plan for a specific phase |
+| `garmin_workouts/templates/` | When you need a JSON example |
 
-**NIE czytaj wszystkiego naraz.** Przy zwykłym pytaniu "jaki był ostatni bieg?" wystarczą `profile.md` + `skills_core.md` + jeden tool call do Stravy.
+**Do NOT load everything upfront. Activity logic and planning logic are separate — do not load both at once.**
+- "What was my last run?" → `skills_activity.md` + `bieg.md` command only.
+- "Plan my week" → `skills_planning.md` + `fitness.md` only.
 
-## 🛠️ Dostępne MCP
-- **Strava** — aktywności, laps, streams, segmenty
-- **Weather (Open-Meteo)** — prognoza, weryfikacja daty (`current.time`)
-- **Filesystem** — ten katalog
-- **Memory** — wiedza długoterminowa (knowledge graph)
+## 🛠️ Available MCP
+- **Strava** — activities, laps, streams, segments
+- **Weather (Open-Meteo)** — forecast, date verification (`current.time`)
+- **Filesystem** — this directory
+- **Memory** — long-term knowledge graph
 
-## 🌐 Język
-User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile.md` → "Preferred language: Polski"). Nigdy nie mieszaj języków w jednej odpowiedzi.
+## 🌐 Language
+Read `profile.md` for the user's preferred language. Output in that language. Never mix languages in one response.
 
-## ⚡ Reguły oszczędności (ważne!)
-- Pytanie jednozdaniowe → krótka odpowiedź + minimalne tool calls.
-- Strava: zaczynaj od `get-activity-details`. **Walk/Ride/Hike → stop, nie pobieraj laps/streams.**
-- Streamy zawsze z `format: "compact"`, `resolution: "low"` (chyba że deep dive).
-- Przed dużą analizą: zapytaj usera czy chce "skrót czy pełen rozkład".
+## ⚡ Token efficiency rules
+- One-sentence question → short answer + minimal tool calls.
+- Strava: always start with `get-activity-details`. **Walk/Ride/Hike → stop, no laps/streams.**
+- Streams always with `format: "compact"`, `resolution: "low"` (unless deep dive requested).
+- Before large analysis: ask if they want "summary or full breakdown".
 
-## 🚫 Czego NIE robić
-- Nie generuj fit/tcx/gpx — tylko JSON (Garmin Connect).
-- Nie zgaduj VDOT — bierz z `fitness.md` albo proś o aktualny.
-- Nie planuj 2+ shakeoutów przed wyścigiem (zawsze 1, dzień przed).
-- Nie używaj cyrylicy w opisach Garmin (Chrome importer się sypie).
-- Nie rób długich podsumowań po każdej drobnej zmianie — user czyta diff.
+## 🚫 What NOT to do
+- Do not generate fit/tcx/gpx — JSON only (Garmin Connect).
+- Do not guess VDOT — read from `fitness.md` or ask.
+- Do not plan 2+ shakeouts before a race (always 1, day before).
+- Do not use Cyrillic in Garmin descriptions (Chrome importer breaks).
+- Do not write long summaries after small changes — the user reads the diff.
 
-## 📋 Skróty zachowań
-- Gdy user pyta co ma dziś/jutro/w tym tygodniu zrobić, jaki jest plan na dany wyścig lub jak wyglądają najbliższe treningi → pobierz pogodę (`weather:weather_forecast`) + przeczytaj `plan_current.md` i odpowiedz krótko
-- Gdy user pyta o ostatni bieg, chce zobaczyć splity, podsumowanie biegu lub jak poszedł ostatni trening biegowy → OBOWIĄZKOWO najpierw użyj Filesystem MCP żeby przeczytać plik `.claude/commands/bieg.md`, następnie wykonaj DOKŁADNIE każdy krok z tego pliku po kolei. Nie zaczynaj odpowiadać przed przeczytaniem pliku.
-- Gdy user prosi o stworzenie treningu lub workoutu dla Garmina → przeczytaj `skills_garmin.md`, użyj template, zapisz JSON do `garmin_workouts/upcoming/`
-- Gdy user pyta o formę, postępy, podsumowanie tygodnia lub jak idą przygotowania → pobierz ostatnie 7 dni ze Stravy + przeczytaj `fitness.md`
+## 📋 Behavior shortcuts
+- When asked what to do today/tomorrow/this week, about a race plan, or upcoming training → get weather (`weather:weather_forecast`) + read `plan_current.md`, answer briefly.
+- When asked about last run, splits, run summary, or how a workout went → MANDATORY: first read `.claude/commands/bieg.md` via Filesystem MCP, then follow EVERY step exactly. Do not start answering before reading the file. (analysis depth rules in `skills_activity.md`)
+- When asked to create a Garmin workout → read `skills_garmin.md`, use template, save JSON to `garmin_workouts/upcoming/`
+- When asked about form, progress, weekly summary, or race prep → get last 7 days from Strava + read `fitness.md`
+- When planning a new training block or weekly plan → read `skills_planning.md` + check `volume_log.md`
