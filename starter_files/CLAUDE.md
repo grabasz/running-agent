@@ -52,7 +52,7 @@ Read `profile.md` for the user's preferred language. Output in that language. Ne
 
 ## 📋 Behavior shortcuts
 - When asked what to do today/tomorrow/this week, about a race plan, or upcoming training → get weather (`weather:weather_forecast`) + read `plan_current.md`, answer briefly.
-- When asked about last run, splits, run summary, or how a workout went → MANDATORY: first read `.claude/commands/bieg.md` via Filesystem MCP, then follow EVERY step exactly. Do not start answering before reading the file. (analysis depth rules in `skills_activity.md`)
+- When asked about last run, splits, run summary, or how a workout went → MANDATORY: first read `.claude/commands/run.md` via Filesystem MCP, then follow EVERY step exactly. Do not start answering before reading the file. (analysis depth rules in `skills_activity.md`)
 - When asked to create a Garmin workout → read `skills_garmin.md`, use template, save JSON to `garmin_workouts/upcoming/`
 - When asked about form, progress, weekly summary, or race prep → get last 7 days from Strava + read `fitness.md`
 - When planning a new training block or weekly plan → read `skills_planning.md` + check `volume_log.md`

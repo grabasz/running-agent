@@ -10,9 +10,10 @@ Read `profile.md` once per session. Use the language from "Preferred language". 
 Verify via `weather:weather_forecast` → `current.time`. Before any plan: state 3 control dates (first/middle/last) and confirm.
 
 ## Weather
-Tool: `weather:weather_forecast` (Open-Meteo, Celsius, timezone=local).
+Tool: `weather:weather_forecast` (Open-Meteo, timezone=local).
+Temperature unit: read from `profile.md → Temperature unit` (default: Celsius). Never mix units in one response.
 WMO icons: 0-1=☀️ 2-3=🌤️ 51-67=🌧️ 71-77=❄️ 80-82=🌦️ 95+=⚡
-Running effects: >20°C → +5-8bpm HR | <5°C → layer up | wind >20km/h → affects pace. Never show °F.
+Running effects: >20°C/68°F → +5-8bpm HR | <5°C/41°F → layer up | wind >20km/h → affects pace.
 
 ## File map — what to load and when
 | File | When |

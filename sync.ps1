@@ -124,7 +124,7 @@ $frameworkFiles = @(
     "skills_phases\phase3_late_quality.md",
     "skills_phases\phase4_taper.md",
     "garmin_workouts\templates\REFERENCE_real_garmin_export.json",
-    ".claude\commands\bieg.md",
+    ".claude\commands\run.md",
     ".claude\commands\volume.md"
 )
 

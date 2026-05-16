@@ -148,7 +148,9 @@ $files = @(
     "garmin_workouts\templates\REFERENCE_real_garmin_export.json",
     "garmin_workouts\upcoming\README.md",
     "garmin_workouts\archive\README.md",
-    ".claude\commands\bieg.md"
+    ".claude\commands\run.md",
+    ".claude\commands\volume.md",
+    "scripts\weekly_volume.py"
 )
 
 foreach ($file in $files) {
@@ -284,6 +286,8 @@ $lat       = Read-Host "   City latitude (for weather, e.g. 50.0647 for Krakow)"
 $lon       = Read-Host "   City longitude (e.g. 19.9450 for Krakow)"
 $language  = Read-Host "   Preferred language (English / Polish / other) [English]"
 if (-not $language) { $language = "English" }
+$tempUnit  = Read-Host "   Temperature unit (Celsius / Fahrenheit) [Celsius]"
+if (-not $tempUnit) { $tempUnit = "Celsius" }
 $distance  = Read-Host "   Target distance (5K / 10K / HM / Marathon) [10K]"
 if (-not $distance) { $distance = "10K" }
 $level     = Read-Host "   Level (beginner / intermediate / advanced) [intermediate]"
@@ -299,6 +303,7 @@ if (Test-Path $profilePath) {
     if ($name)     { $profileContent = $profileContent -replace "\[Your Name\]", $name }
     if ($city)     { $profileContent = $profileContent -replace "\[City\]", $city }
     if ($language) { $profileContent = $profileContent -replace "\[English / Polish / other\]", $language }
+    if ($tempUnit) { $profileContent = $profileContent -replace "\[Celsius / Fahrenheit\]", $tempUnit }
     if ($distance) { $profileContent = $profileContent -replace "\[5K / 10K / HM / Marathon\]", $distance }
     if ($level)    { $profileContent = $profileContent -replace "\[beginner / intermediate / advanced\]", $level }
     if ($mode)     { $profileContent = $profileContent -replace "\[race_prep / fitness\]", $mode }
