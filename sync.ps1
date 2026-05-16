@@ -29,7 +29,7 @@ if ($TargetDirectory) {
         $InstallPath = (Get-Content $pathFile -Raw -Encoding UTF8).Trim()
     } else {
         $InstallPath = "$env:USERPROFILE\Documents\running"
-        Write-Host "  No .install_path found — using default: $InstallPath" -ForegroundColor Yellow
+        Write-Host "  No .install_path found - using default: $InstallPath" -ForegroundColor Yellow
     }
 }
 
