@@ -28,7 +28,7 @@ function Write-Info($msg) { Write-Host "      $msg" -ForegroundColor Gray }
 function Write-Warn($msg) { Write-Host "      WARN: $msg" -ForegroundColor Yellow }
 function Write-Err($msg)  { Write-Host "      ERROR: $msg" -ForegroundColor Red }
 
-$TOTAL_STEPS = 7
+$TOTAL_STEPS = 8
 
 Clear-Host
 Write-Host ""
@@ -271,9 +271,54 @@ try {
 }
 
 # ============================================================
-# STEP 7 — First run setup: collect user data
+# STEP 7 — Update Claude Code settings.json (MCP servers)
 # ============================================================
-Write-Step 7 $TOTAL_STEPS "Initial profile setup..."
+Write-Step 7 $TOTAL_STEPS "Updating Claude Code MCP config (~/.claude/settings.json)..."
+
+$claudeCodeConfig = Join-Path $env:USERPROFILE ".claude\settings.json"
+
+if (Test-Path $claudeCodeConfig) {
+    Write-Info "Found: $claudeCodeConfig"
+    try {
+        $ccRaw = Get-Content $claudeCodeConfig -Raw -Encoding UTF8
+        $ccConfig = $ccRaw | ConvertFrom-Json
+    } catch {
+        Write-Warn "Could not parse settings.json: $_"
+        $ccConfig = [PSCustomObject]@{}
+    }
+} else {
+    Write-Info "Not found - will create: $claudeCodeConfig"
+    $ccDir = Split-Path -Parent $claudeCodeConfig
+    if (-not (Test-Path $ccDir)) { New-Item -ItemType Directory -Path $ccDir -Force | Out-Null }
+    $ccConfig = [PSCustomObject]@{}
+}
+
+if (-not ($ccConfig.PSObject.Properties.Name -contains "mcpServers")) {
+    $ccConfig | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
+}
+
+$ccServers = @{
+    "strava"     = [PSCustomObject]@{ command = "npx"; args = @("-y", "@r-huijts/strava-mcp-server") }
+    "memory"     = [PSCustomObject]@{ command = "npx"; args = @("-y", "@modelcontextprotocol/server-memory") }
+    "filesystem" = [PSCustomObject]@{ command = "npx"; args = @("-y", "@modelcontextprotocol/server-filesystem", $InstallPath) }
+}
+
+foreach ($key in $ccServers.Keys) {
+    if ($ccConfig.mcpServers.PSObject.Properties.Name -contains $key) {
+        Write-Info "Skipping '$key' (already in Claude Code config)"
+    } else {
+        $ccConfig.mcpServers | Add-Member -MemberType NoteProperty -Name $key -Value $ccServers[$key]
+        Write-Info "Added: $key"
+    }
+}
+
+$ccConfig | ConvertTo-Json -Depth 10 | Set-Content $claudeCodeConfig -Encoding UTF8
+Write-OK "Claude Code MCP config updated"
+
+# ============================================================
+# STEP 8 — First run setup: collect user data
+# ============================================================
+Write-Step 8 $TOTAL_STEPS "Initial profile setup..."
 
 Write-Host ""
 Write-Host "   Let's fill in your basic profile so Claude knows who you are." -ForegroundColor White
@@ -338,7 +383,7 @@ Write-OK "Profile setup complete"
 # Save install path so sync.ps1 knows where to sync next time
 $pathFile = Join-Path $scriptDir ".install_path"
 Set-Content $pathFile $InstallPath -Encoding UTF8
-Write-Info "Install path saved → .install_path (sync.ps1 will use this automatically)"
+Write-Info "Install path saved to .install_path (sync.ps1 will use this automatically)"
 
 # ============================================================
 # DONE
