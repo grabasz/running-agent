@@ -5,12 +5,12 @@
 - Taper length varies by distance — start counting back from race day
 
 ## Taper length by distance
-| Dystans | Taper start | Charakter |
-|---------|-------------|-----------|
-| 5K      | Day -5 to -7 | Krótki, głównie łatwe biegi + strides |
-| 10K     | Day -7       | Tydzień zmniejszonej objętości |
-| HM      | Day -10      | Klasyczny taper z ostatnim akcentem D-7 |
-| Maraton | Day -14 to -21 | Długi taper, stopniowe zmniejszanie |
+| Distance | Taper start    | Character |
+|----------|----------------|-----------|
+| 5K       | Day -5 to -7   | Short, mainly easy runs + strides |
+| 10K      | Day -7         | Week of reduced volume |
+| HM       | Day -10        | Classic taper with last accent Day -7 |
+| Marathon | Day -14 to -21 | Long taper, gradual volume reduction |
 
 ## Golden rule
 **Reduce VOLUME, not INTENSITY.** Shorten runs, but T-pace must still appear briefly.
@@ -53,7 +53,7 @@ Day  -1: SHAKEOUT — 15–20 min easy + 4× strides + 1× 1 min @ race pace
 Day   0: RACE
 ```
 
-## Maraton Taper (14–21 days)
+## Marathon Taper (14–21 days)
 ```
 Day -21 to -15: last long run (32–34km), then volume drops 25%
 Day -14: last quality session (4× 1.5km @ T-pace)

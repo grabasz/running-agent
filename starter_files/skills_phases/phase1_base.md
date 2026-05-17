@@ -10,8 +10,8 @@
 Build aerobic endurance and running resilience. **Volume matters more than intensity.**
 
 ## Timeline by distance
-| Dystans | Kiedy zacząć | Czas trwania fazy |
-|---------|-------------|-------------------|
+| Distance | When to start | Phase duration |
+|----------|---------------|----------------|
 | 5K      | 8–12 weeks before race / virtual test | 3–4 weeks |
 | 10K     | 12–16 weeks before race / virtual test | 4–6 weeks |
 | HM      | 16–24 weeks before race | 4–8 weeks |
@@ -31,7 +31,7 @@ Build aerobic endurance and running resilience. **Volume matters more than inten
 - **1× Easy + Strides** (45 min easy + 6–8×100m strides)
 - Optional: Hills (8–10×60–90 sec uphill, jog down)
 
-### Maraton
+### Marathon
 - **2× Easy run** (45–75 min @ E-pace)
 - **1× Long run** (90–120 min, up to 30% of weekly volume)
 - **1× Easy + Strides** (60 min easy + 6–8×100m strides)

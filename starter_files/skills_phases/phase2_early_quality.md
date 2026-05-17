@@ -5,8 +5,8 @@
 - See timeline by distance below
 
 ## Timeline by distance
-| Dystans | Kiedy | Czas trwania |
-|---------|-------|-------------|
+| Distance | When | Duration |
+|----------|------|----------|
 | 5K      | 4–8 weeks before race / virtual test | 2–3 weeks |
 | 10K     | 6–10 weeks before race / virtual test | 3–4 weeks |
 | HM      | 8–12 weeks before race | 3–4 weeks |
@@ -35,7 +35,7 @@ Focus on R-pace economy and introducing M-pace inserts in long runs.
   - Strides + Hills: easy + 6×100m + 6× hills 60 sec
   - Easy Tempo: 20–25 min @ M-pace
 
-### Maraton — M-pace foundation
+### Marathon — M-pace foundation
 Build comfort at M-pace. Long runs with M-pace inserts become the key workout.
 - **Quality accent options:**
   - Long run with M-pace inserts (e.g. 16km with 6km @ M-pace in middle)
