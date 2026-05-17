@@ -5,8 +5,8 @@
 - See timeline by distance below
 
 ## Timeline by distance
-| Dystans | Kiedy | Czas trwania |
-|---------|-------|-------------|
+| Distance | When | Duration |
+|----------|------|----------|
 | 5K      | 2–4 weeks before race / virtual test | 2–3 weeks |
 | 10K     | 3–6 weeks before race / virtual test | 3–4 weeks |
 | HM      | 4–8 weeks before race | 3–5 weeks |
@@ -47,7 +47,7 @@ Half marathon is run ~10–15 sec/km faster than T-pace. Threshold work is king.
   - **Intervals:** 4–6× 1km @ I-pace, 2–3 min jog
   - Short 5K or 10K race (1× per phase)
 
-### Maraton — T-pace and long M-pace runs
+### Marathon — T-pace and long M-pace runs
 Marathon is run at M-pace. Long runs with sustained M-pace are the key.
 - **2× Easy run**
 - **1× Long run** (22–30km, with 12–16km @ M-pace in second half)

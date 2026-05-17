@@ -1,7 +1,7 @@
 # SKILLS ACTIVITY — Strava activity analysis
 
 > Load when: last run, splits, laps, streams, HR, pace, race result.
-> For "show last run" → always read `.claude/commands/bieg.md` first.
+> For "show last run" → always read `.claude/commands/run.md` first.
 
 ## Analysis depth (conditional)
 1. ALWAYS first: `strava:get-activity-details`

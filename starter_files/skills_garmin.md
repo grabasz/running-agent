@@ -39,9 +39,9 @@ EXCEPTION — cooldown lap.button: `endConditionCompare=""` and `preferredEndCon
 | 1 | no.target | targetValueOne/Two = null |
 | 6 | pace.zone | values in m/s |
 
-`targetValueOne` = faster limit (higher m/s = lower pace, np. 6:00 = 2.778)
-`targetValueTwo` = slower limit (lower m/s = higher pace, np. 6:20 = 2.632)
-Zawsze: targetValueOne > targetValueTwo.
+`targetValueOne` = faster limit (higher m/s = lower pace, e.g. 6:00 = 2.778)
+`targetValueTwo` = slower limit (lower m/s = higher pace, e.g. 6:20 = 2.632)
+Always: targetValueOne > targetValueTwo.
 
 ## Pace → m/s (1000 / pace_seconds)
 ```
@@ -70,26 +70,26 @@ Zawsze: targetValueOne > targetValueTwo.
 ```
 
 ## Special characters — CRITICAL
-Chrome extension misreads UTF-8 as Latin-1 → plik MUSI być ASCII-only.
+Chrome extension misreads UTF-8 as Latin-1 → file MUST be ASCII-only.
 NEVER use Cyrillic — "a" must be ASCII U+0061, NOT Cyrillic U+0430.
 
-Polish escape codes (używaj dosłownie w stringach Python, `ensure_ascii=True` zrobi resztę):
+Special character escape codes (use literally in Python strings; `ensure_ascii=True` will handle the rest):
 ```
 ś=ś | ó=ó | ą=ą | ę=ę | ć=ć | ł=ł | ń=ń | ź=ź | ż=ż
 ```
 
-## ⚠️ Zapisywanie pliku — ZAWSZE Python, NIGDY Write/filesystem tools
-`mcp__filesystem__write_file` i `Write` tool piszą UTF-8 → literalne znaki polskie → Chrome buguje.
+## ⚠️ Saving the file — ALWAYS Python, NEVER Write/filesystem tools
+`mcp__filesystem__write_file` and the `Write` tool output UTF-8 → literal special chars → Chrome importer breaks.
 
-Wzorzec (PowerShell) — kopiuj i wklej, zmień tylko `workout = {...}` i nazwę pliku:
+Template (PowerShell) — copy-paste, only change `workout = {...}` and file name:
 ```powershell
 $py = @'
 import sys
-sys.path.insert(0, r"C:\Users\grabb\Documents\running\garmin_workouts")
+sys.path.insert(0, r"[YOUR_RUNNING_FOLDER]\garmin_workouts")
 from make_garmin import save_workout
 
 workout = {
-    # ... twój dict tutaj ...
+    # ... your workout dict here ...
 }
 
 save_workout(workout, "YYYY.MM.DD_Type_Pace.json")
@@ -102,8 +102,8 @@ $py | Out-File "$env:TEMP\gw.py" -Encoding utf8; python "$env:TEMP\gw.py"
 - [ ] `targetValueOne` = faster limit (higher m/s, np. 6:00 = 2.778), `targetValueTwo` = slower limit (np. 6:20 = 2.632)
 - [ ] Warmup = 2 steps (time-based + lap.button)
 - [ ] Cooldown = lap.button with endConditionCompare="" and preferredEndConditionUnit=null
-- [ ] Polish chars as normal Python strings (ensure_ascii=True w make_garmin.py obsłuży escaping)
-- [ ] Saved via `make_garmin.save_workout()`, nie przez Write tool
+- [ ] Special chars as normal Python strings (ensure_ascii=True in make_garmin.py handles escaping)
+- [ ] Saved via `make_garmin.save_workout()`, not via Write tool
 - [ ] File name: YYYY.MM.DD_Type_Pace.json
 
 ## Garmin Chrome importer
