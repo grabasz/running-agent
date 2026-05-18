@@ -193,7 +193,8 @@ Documents\running\
 ├── skills_core.md          # Router: what to load and when (always loaded)
 ├── skills_activity.md      # Strava analysis logic (loaded for run/lap questions)
 ├── skills_planning.md      # Planning logic, phases, volume calibration
-├── skills_garmin.md        # Garmin JSON spec (loaded only when generating workouts)
+├── skills_garmin.md        # Garmin running workout JSON spec (loaded only when generating)
+├── skills_gym.md           # Garmin strength workout JSON spec (loaded only when generating)
 ├── garmin_gen.py           # CLI script: generate Garmin JSON without token cost
 ├── elev_per_km.py          # Elevation per km calculator (used by /run command)
 ├── scripts\
@@ -208,7 +209,8 @@ Documents\running\
 │   ├── run.md              # /run — show last run as a table
 │   └── volume.md           # /volume — update weekly mileage log
 └── garmin_workouts\
-    ├── upcoming\           # JSON workouts ready to import
+    ├── upcoming\           # Running JSON workouts ready to import
+    ├── gym\                # Strength workout JSON files
     ├── archive\            # Completed workouts (move here after)
     └── templates\          # Reference Garmin JSON structure
 ```
@@ -217,7 +219,8 @@ Documents\running\
 - `skills_core.md` — slim router, always loaded
 - `skills_activity.md` — Strava analysis, loaded for run/lap/stream questions
 - `skills_planning.md` — planning logic, loaded for plan/volume questions
-- `skills_garmin.md` — heavy JSON reference, loaded only when generating workouts
+- `skills_garmin.md` — running workout JSON reference, loaded only when generating running workouts
+- `skills_gym.md` — strength workout JSON reference, loaded only when generating gym workouts
 
 Strava analysis depth is conditional: Walk/Ride → details only; Run easy → +laps; Run quality/race → +laps+streams.
 
