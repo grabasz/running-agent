@@ -107,6 +107,7 @@ $folders = @(
     "$InstallPath\skills_phases",
     "$InstallPath\garmin_workouts",
     "$InstallPath\garmin_workouts\upcoming",
+    "$InstallPath\garmin_workouts\gym",
     "$InstallPath\garmin_workouts\archive",
     "$InstallPath\garmin_workouts\templates"
 )
@@ -137,6 +138,7 @@ $files = @(
     "CLAUDE.md",
     "skills_core.md",
     "skills_garmin.md",
+    "skills_gym.md",
     "garmin_gen.py",
     "elev_per_km.py",
     "project_instructions.txt",

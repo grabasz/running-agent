@@ -128,6 +128,7 @@ $frameworkFiles = @(
     "skills_activity.md",
     "skills_planning.md",
     "skills_garmin.md",
+    "skills_gym.md",
     "garmin_gen.py",
     "elev_per_km.py",
     "scripts\weekly_volume.py",
