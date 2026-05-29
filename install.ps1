@@ -28,7 +28,7 @@ function Write-Info($msg) { Write-Host "      $msg" -ForegroundColor Gray }
 function Write-Warn($msg) { Write-Host "      WARN: $msg" -ForegroundColor Yellow }
 function Write-Err($msg)  { Write-Host "      ERROR: $msg" -ForegroundColor Red }
 
-$TOTAL_STEPS = 8
+$TOTAL_STEPS = 9
 
 Clear-Host
 Write-Host ""
@@ -386,6 +386,38 @@ Write-OK "Profile setup complete"
 $pathFile = Join-Path $scriptDir ".install_path"
 Set-Content $pathFile $InstallPath -Encoding UTF8
 Write-Info "Install path saved to .install_path (sync.ps1 will use this automatically)"
+
+# ============================================================
+# STEP 9 — Install Python dependencies for /run script
+# ============================================================
+Write-Step 9 $TOTAL_STEPS "Installing Python dependencies for /run script..."
+
+$pythonCmd = $null
+foreach ($candidate in @("python", "py", "python3")) {
+    if (Get-Command $candidate -ErrorAction SilentlyContinue) {
+        $pythonCmd = $candidate
+        break
+    }
+}
+
+if (-not $pythonCmd) {
+    Write-Host "   ! Python not found in PATH. /run skill needs Python with 'requests' + 'truststore'." -ForegroundColor Yellow
+    Write-Host "     Install Python 3.10+ from https://python.org, then run:" -ForegroundColor Gray
+    Write-Host "       pip install -r `"$InstallPath\scripts\requirements.txt`"" -ForegroundColor Cyan
+} else {
+    $requirementsFile = Join-Path $InstallPath "scripts\requirements.txt"
+    if (Test-Path $requirementsFile) {
+        Write-Info "Found $pythonCmd; installing requests + truststore..."
+        & $pythonCmd -m pip install --quiet -r $requirementsFile
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Python dependencies installed (/run skill ready)"
+        } else {
+            Write-Host "   ! pip install failed. Try manually: $pythonCmd -m pip install -r `"$requirementsFile`"" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "   ! requirements.txt missing at $requirementsFile — run sync.ps1 first" -ForegroundColor Yellow
+    }
+}
 
 # ============================================================
 # DONE
