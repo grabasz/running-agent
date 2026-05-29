@@ -3,28 +3,28 @@ Show the last Strava run as a table. Execute EXACTLY these steps in order:
 **STEP 1** — get list:
 `strava:get-recent-activities` (perPage: 5) → find the last activity of type Run (ignore Walk/Ride/Hike).
 
-**STEP 2** — details:
-`strava:get-activity-details` for the ID from step 1.
+**STEP 2 — details + laps + streams IN PARALLEL** (all use the ID from step 1, fire simultaneously in one message):
+- `strava:get-activity-details` for the ID from step 1
+- `strava:get-activity-laps` for the ID from step 1
+- `strava:get-activity-streams` with parameters:
+  - streamTypes: ["distance", "altitude"]
+  - format: "compact"
+  - resolution: "medium"  ← ~1000 points, ~27 pts/km accuracy even on a marathon
+  - points_per_page: 1000  ← CRITICAL: forces 1 page instead of 10 (16KB response fits in single chunk)
 
-**STEP 3** — laps:
-`strava:get-activity-laps` for the same ID.
-
-**STEP 4** — streams (ALWAYS for a run):
-`strava:get-activity-streams` with parameters:
-- streamTypes: ["distance", "altitude"]
-- format: "compact"
-- resolution: "medium"
-
-**STEP 5** — calculate elevation per km using Python script:
-Take the `distance` and `altitude` arrays from streams (all pages merged into one array).
-Run via Bash:
+**STEP 3** — calculate elevation per km:
+From the streams response take the `data` field (contains `{"distance":[...],"altitude":[...]}`).
+Save the **entire `data` field as JSON** to `scripts/streams_tmp.json` via the Write tool.
+Run:
 ```
-python elev_per_km.py '<dist_json>' '<alt_json>'
+python elev_per_km.py scripts/streams_tmp.json
 ```
-where `<dist_json>` and `<alt_json>` are the full arrays as JSON strings (e.g. `[0.7,7.2,...]`).
+After using the output, delete `scripts/streams_tmp.json` (Bash `del` or PowerShell `Remove-Item`).
 Use the output as elevation per km values.
 
-**STEP 6** — OUTPUT. Copy this format EXACTLY (replace values in brackets).
+(Rationale: passing 1000 points via bash CLI args fails on Windows due to ~8KB arg limit. Reading from a file path bypasses this entirely and keeps full resolution.)
+
+**STEP 4** — OUTPUT. Copy this format EXACTLY (replace values in brackets).
 Output labels in the user's language from profile.md. No text before the table.
 
 🏃 [activity name] — [weekday] [DD.MM.YYYY]
@@ -56,7 +56,7 @@ Write what is actually happening in that km based on pace + HR + elevation.
 Do NOT write wordplay, empty metaphors, or excessive exclamation marks.
 Max 6–8 words. Tone: direct, observational, like talking to the runner right after the finish line.
 
-**STEP 7** — RACE SUMMARY (only for Race type; skip for Easy/Tempo/Intervals):
+**STEP 5** — RACE SUMMARY (only for Race type; skip for Easy/Tempo/Intervals):
 
 Before writing, load `fitness.md` and `races.md` (if not already read this session).
 
@@ -66,13 +66,13 @@ Write a `## 📋 Race analysis` section with two parts:
 
 **🔧 What to consider** — minimum 3 specific points referencing upcoming races or the training plan. Name a specific km, HR, or pace. End with one sentence tying it to the season.
 
-**STEP 8** — UPDATE CONTEXT FILES (only for Race; execute after STEP 7):
+**STEP 6** — UPDATE CONTEXT FILES (only for Race; execute after STEP 5):
 
 Calculate VDOT from result time and distance. Compare with current VDOT from `fitness.md`.
 
 **If new T-pace is faster by >5s/km than current in `fitness.md`:**
 
-1. Update `fitness.md` via **Edit** (not Write) — replace:
+1. Update `fitness.md` via **Edit** — replace:
    - Line with VDOT and update date
    - All zones: E-pace, M-pace, T-pace, I-pace, R-pace
    - Add entry to threshold history section (new line at end)

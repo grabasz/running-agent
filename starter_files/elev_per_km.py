@@ -1,7 +1,12 @@
 import sys, json
 
-dist = json.loads(sys.argv[1])
-alt = json.loads(sys.argv[2])
+# Input: path to a JSON file with fields {"distance":[...], "altitude":[...]}
+# (exactly the format of the "data" field in strava:get-activity-streams response)
+with open(sys.argv[1], encoding='utf-8') as f:
+    d = json.load(f)
+
+dist = d['distance']
+alt = d['altitude']
 
 n = len(dist)
 total_km = int(dist[-1] / 1000) + 1
