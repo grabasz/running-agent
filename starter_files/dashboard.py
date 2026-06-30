@@ -254,11 +254,13 @@ def page_overview():
                 df["type_icon"].fillna("") + " " +
                 df["title"].fillna("")
             )
-            df["pogoda"] = df.apply(
-                lambda r: f"{int(r['weather_temp_c'])}°C{' · ' + r['weather_note'] if r['weather_note'] else ''}"
-                          if pd.notna(r['weather_temp_c']) else "",
-                axis=1
-            )
+            def _fmt_weather(r):
+                if not pd.notna(r['weather_temp_c']):
+                    return ""
+                temp = f"{int(r['weather_temp_c'])}°C"
+                note = r['weather_note'] if pd.notna(r['weather_note']) else ""
+                return f"{temp} · {note}" if note else temp
+            df["pogoda"] = df.apply(_fmt_weather, axis=1)
             st.dataframe(
                 df[["date", "display", "pogoda"]].rename(columns={
                     "date": "Data", "display": "Plan", "pogoda": "Pogoda"
