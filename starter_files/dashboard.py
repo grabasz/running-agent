@@ -6,12 +6,17 @@ Run locally:
 Or from project root with custom port:
     streamlit run dashboard.py --server.port 8501
 
-Deploy: push to GitHub + connect at https://share.streamlit.io
+Deploy on Streamlit Cloud (https://share.streamlit.io):
   - Main file: dashboard.py
-  - Secrets: TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (use libsql instead of local sqlite3)
+  - Secrets (TOML): TURSO_DATABASE_URL = "libsql://..."  and  TURSO_AUTH_TOKEN = "..."
+  - On cold start the app pulls a fresh snapshot from Turso into a local replica
+    file (see db.api.bootstrap_cloud). All queries then read from that snapshot,
+    so no per-query round-trip to Turso.
 """
 from __future__ import annotations
+import os
 import sys
+import tempfile
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -22,7 +27,65 @@ import streamlit as st
 
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / "db"))
+
+# Bridge Streamlit Cloud secrets -> environment vars so db.api / db.sync pick them up.
+# On localhost st.secrets is empty and this is a no-op.
+try:
+    for _key in ("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"):
+        if _key in st.secrets and not os.getenv(_key):
+            os.environ[_key] = st.secrets[_key]
+except Exception:
+    pass  # no secrets.toml — local sqlite mode
+
+# Point the bootstrap replica at a writable tmp dir (Streamlit Cloud's working
+# dir is ephemeral but /tmp is fine; locally we get a tmp file too, harmless).
+if os.getenv("TURSO_DATABASE_URL") and not os.getenv("RUNNING_DB_PATH"):
+    os.environ["RUNNING_DB_PATH"] = str(Path(tempfile.gettempdir()) / "running_replica.db")
+
 import api  # type: ignore
+
+
+@st.cache_resource(show_spinner="Pobieram dane z Turso…")
+def _bootstrap_once():
+    """Run once per Streamlit session. In cloud mode pulls fresh snapshot
+    from Turso; in local mode returns None (data.db is already the source)."""
+    return api.bootstrap_cloud()
+
+
+# ============================================
+# Password gate (only enforced when APP_PASSWORD secret is set)
+# ============================================
+
+def _check_password() -> bool:
+    expected = None
+    try:
+        expected = st.secrets.get("APP_PASSWORD")
+    except Exception:
+        expected = None
+    expected = expected or os.getenv("APP_PASSWORD")
+
+    if not expected:
+        return True  # no password configured — open access (local dev)
+
+    if st.session_state.get("auth_ok"):
+        return True
+
+    st.title("🔒 Bartek Running")
+    pw = st.text_input("Hasło", type="password", key="pw_input")
+    if st.button("Zaloguj"):
+        if pw == expected:
+            st.session_state["auth_ok"] = True
+            st.rerun()
+        else:
+            st.error("Złe hasło.")
+    return False
+
+
+if not _check_password():
+    st.stop()
+
+_REPLICA = _bootstrap_once()
+_CLOUD_MODE = _REPLICA is not None
 
 
 # ============================================
@@ -500,9 +563,15 @@ with st.sidebar:
     st.title("🏃 Running")
     page = st.radio("Nawigacja", list(PAGES.keys()), label_visibility="collapsed")
     st.divider()
-    st.caption(f"DB: `db/data.db` (local)")
+    if _CLOUD_MODE:
+        st.caption(f"☁️ Turso replica: `{Path(_REPLICA).name}`")
+    else:
+        st.caption("💾 DB: `db/data.db` (local)")
     if st.button("🔄 Odśwież dane (clear cache)"):
         st.cache_data.clear()
+        if _CLOUD_MODE:
+            st.cache_resource.clear()
+            api.bootstrap_cloud(force=True)
         st.rerun()
 
 PAGES[page]()

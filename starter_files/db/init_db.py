@@ -3,6 +3,11 @@
 Usage:
     python db/init_db.py            # create if not exists
     python db/init_db.py --reset    # drop existing, recreate (DANGEROUS)
+
+DB_PATH resolution:
+    1. RUNNING_DB_PATH env var (explicit override — used by Streamlit Cloud
+       to point at a writable replica file pulled from Turso).
+    2. Default: <repo>/db/data.db (local development).
 """
 import os
 import sys
@@ -10,8 +15,10 @@ import sqlite3
 from pathlib import Path
 
 DB_DIR = Path(__file__).parent
-DB_PATH = DB_DIR / "data.db"
 SCHEMA_PATH = DB_DIR / "schema.sql"
+
+_env_path = os.getenv("RUNNING_DB_PATH")
+DB_PATH = Path(_env_path) if _env_path else DB_DIR / "data.db"
 
 
 def init(reset: bool = False) -> Path:
