@@ -161,6 +161,34 @@ def main():
 
     print(f"Zapisano {len(weeks)} tygodni → {out_path.name}  (avg {avg:.1f} km/tydzień)")
 
+    # Save to DB (errors -> stderr to keep stdout clean)
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent / "db"))
+        import api  # type: ignore
+
+        with api.connect() as conn:
+            for w in sorted(weeks):
+                d = weeks[w]
+                km = d["km"]
+                if km < avg * 0.75:
+                    trend = "recovery"
+                elif km > avg * 1.12:
+                    trend = "peak"
+                else:
+                    trend = None
+                api.weekly_volume.upsert(conn,
+                    week_start=w,
+                    distance_km=round(km, 2),
+                    elevation_gain_m=int(d["elev"]),
+                    duration_sec=int(d["time_s"]),
+                    num_runs=int(d["runs"]),
+                    longest_km=round(d["long_km"], 2),
+                    trend=trend,
+                )
+        print(f"<!-- saved {len(weeks)} weeks to DB.weekly_volume -->", file=sys.stderr)
+    except Exception as e:
+        print(f"<!-- DB save failed: {e} -->", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

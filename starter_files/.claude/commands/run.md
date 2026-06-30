@@ -1,64 +1,99 @@
-Show the last Strava run as a table.
+Pokaż ostatni bieg jako tabelkę i **zapisz do DB**.
 
-**STEP 1** — run the script:
+**Garmin primary** (z running dynamics: GCT, vertical oscillation, stride length, training effect, VO₂max). **Strava fallback** gdy Garmin token wygasł.
+
+---
+
+## KROK 1 — pobierz bieg
+
+### 1A. Spróbuj Garmin (preferowane, ma running dynamics)
+
+1. `mcp__garmin__list-activities` z `limit: 10`
+2. **Znajdź pierwszy element** z `activityType.typeKey == "running"` (pomiń e_bike, swim, strength). Zapamiętaj `activityId`.
+3. `mcp__garmin__get-activity-splits` z `activityId` z kroku 2
+4. Zbuduj bundle JSON: `{"activity": <element z list-activities>, "splits": <response get-activity-splits>}`
+5. **Zapisz** bundle do `db/_tmp_garmin.json` (Write tool)
+6. **Wywołaj**: `python scripts/garmin_save.py db/_tmp_garmin.json`
+7. Skrypt zapisuje do DB (`runs` + `run_laps` z running dynamics) i drukuje gotową tabelkę markdown — **wklej output 1:1** poniżej.
+
+**Jeśli `mcp__garmin__list-activities` zwraca błąd 401 / "session expired"** → przejdź do **1B**.
+
+### 1B. Fallback Strava (gdy Garmin nie działa)
+
 ```
 python scripts/run.py
 ```
-Optional: `python scripts/run.py <activity_id>` for a specific run.
+Opcjonalnie: `python scripts/run.py <activity_id>` dla konkretnego biegu.
 
-The script fetches everything from Strava itself (auto-refresh of access token, data goes straight into Python — not through Claude's context), computes elevation per km, and prints a ready-to-paste markdown table with auto-flags and markers:
-- 🔥 fastest km
-- 🐢 slowest km
+Skrypt automatycznie zapisuje do DB (`source='strava'`, bez running dynamics) i drukuje tabelkę markdown.
+
+---
+
+## KROK 2 — Wklej tabelkę + dostosuj 2 rzeczy
+
+**Wklej output skryptu 1:1** (już ma `🏷️ Typ` z auto-klasyfikacji w nagłówku — skoryguj jeśli błędna). Potem:
+
+1. **Weryfikuj Typ** w nagłówku (auto-klasyfikacja może się mylić) — `Easy` / `Tempo` / `Interwały` / `Wyścig` / `Long` / `Recovery` / `Shakeout`. Jeśli zmieniasz → `UPDATE runs SET type='...' WHERE id=<run_id>`.
+
+2. **Zamień markery** (🔥 / 🐢 / 💓 / 📉 / ⛰️ / ⏸️ / ⚖️) w kolumnie komentarz na krótkie obserwacje trenerskie (6–8 słów). Marker tylko sygnalizuje GDZIE komentować.
+
+**Pozostałe km zostaw bez komentarza.** Nie wymyślaj komentarzy do równych km.
+
+### Auto-markery
+- 🔥 najszybszy / 🐢 najwolniejszy
 - 💓 HR peak
-- 📉 form dip (cadence)
-- ⛰️ climb +Xm
-- ⏸️ stop ~Xmin
+- 📉 dołek formy (najniższa kadencja)
+- ⛰️ podbieg +Xm
+- ⏸️ stop ~Xmin (tylko Strava — Garmin nie wykrywa pauz)
+- **⚖️ asymetria L/R** (gdy GCT balance odchyła >0.7% od 50%) — **NOWE dla Garmina**
 
-Auth is shared with the strava-mcp server via `~/.config/strava-mcp/config.json` (so MCP keeps working transparently; refresh tokens stay in sync).
+### Wytyczne komentarzy
+Komentarz to obserwacja, nie dowcip. Tempo + HR + wzn + (dla Garmina) dynamics.
+- HR rośnie, tempo trzyma → "serce pracuje, nogi stoją"
+- Szybki km po zjeździe → "zjazd skasowany z głową"
+- Wolniejszy km na podbiegu → "podbieg wziął swoje"
+- Asymetria L/R rośnie → "prawa noga przejmuje pod zmęczeniem"
+- Krótsze GCT + dłuższy krok → "forma elite-like po pauzie"
+- Max 6–8 słów, ton trenerski, konkretny
 
-**STEP 2** — paste the script output 1:1 and make EXACTLY two changes:
+Żadnego tekstu przed tabelką.
 
-1. **Add the Type** in the header — replace `<DOPISZ na podstawie planu>` (or its English equivalent) with: `Easy` / `Tempo` / `Intervals` / `Race` based on pace, HR, and context from `plan_current.md`. Use the user's language from `profile.md`.
+---
 
-2. **Replace markers** (🔥 / 🐢 / 💓 / 📉 / ⛰️ / ⏸️) in the comment column with short coaching observations (6–8 words). The marker just tells you WHERE to comment.
+## KROK 3 — PODSUMOWANIE (tylko dla Wyścigu)
 
-**Leave other km empty** — empty cell. Do not invent comments for steady-state km. Most easy-run km are "steady rhythm" — writing that 30 times is wasted output.
+Dla `Easy` / `Tempo` / `Interwały` / `Long` / `Recovery` / `Shakeout` — **pomiń**.
 
-**Comment guidelines:**
-A coaching observation, not wordplay. Write what's happening: pace + HR + elevation.
-- HR rising, pace holding → "heart working, legs holding"
-- Fast km after descent → "descent cashed in"
-- Slower km on climb → "hill took its toll"
-- Late acceleration → "engine firing"
-- Fastest → "all in"
-Max 6–8 words. Direct, observational tone.
+Załaduj `fitness.md` i `races.md` (jeśli nie były czytane). Napisz `## 📋 Analiza wyścigu`:
 
-No text before the table.
+**✅ Co poszło bardzo dobrze** — min. 4 obserwacje z danymi z laps/splits.
 
-**STEP 3** — RACE SUMMARY (only for Race type; skip for Easy/Tempo/Intervals):
+**🔧 Co warto rozważyć** — min. 3 punkty z odniesieniem do kolejnych startów. Konkretny km, HR, tempo. Zakończ jednym zdaniem spinającym w kontekście sezonu.
 
-Before writing, load `fitness.md` and `races.md` (if not already read).
+---
 
-Write a `## 📋 Race analysis` section:
+## KROK 4 — AKTUALIZACJA PLIKÓW (tylko dla Wyścigu, po KROK 3)
 
-**✅ What went very well** — minimum 4 specific observations from lap/split data.
+Oblicz VDOT z czasu i dystansu. Porównaj z `fitness.md`.
 
-**🔧 What to consider** — minimum 3 specific points referencing upcoming races or the training plan. Name a specific km, HR, or pace. End with one sentence tying it to the season.
+**Jeśli nowy T-pace szybszy o >5s/km:**
 
-**STEP 4** — UPDATE CONTEXT FILES (only for Race; execute after STEP 3):
-
-Calculate VDOT from result time and distance. Compare with `fitness.md`.
-
-**If new T-pace is faster by >5s/km:**
-
-1. Update `fitness.md` (Edit): VDOT + date + all zones (E/M/T/I/R) + threshold history + Race Predictors
-2. If new PB — update `profile.md` in the `## PB` section
-3. Display:
+1. Zaktualizuj `fitness.md` (Edit): VDOT + data + wszystkie strefy + Historia progu + Race Predictors
+2. Jeśli PB — zaktualizuj `profile.md` w sekcji `## PB`
+3. Plus w DB: `INSERT INTO vdot_history` i `UPDATE races SET actual_time_sec=..., is_pb=1`
+4. Wyświetl:
 ```
-📝 Updated:
-- fitness.md: VDOT [old] → [new], T-pace [old] → [new]
-- profile.md: PB HM [old] → [new]  ← only if PB
+📝 Zaktualizowano:
+- fitness.md: VDOT [stary] → [nowy], T-pace [stary] → [nowy]
+- profile.md: PB HM [stary] → [nowy]  ← tylko jeśli PB
+- DB: vdot_history +1, races UPDATE PB
 ```
 
-**If difference ≤5s/km:**
-`ℹ️ Form confirmed, threshold unchanged (difference <5s/km — below update threshold).`
+**Jeśli różnica ≤5s/km:**
+`ℹ️ Forma potwierdzona, próg bez zmian (różnica <5s/km — poniżej progu aktualizacji).`
+
+---
+
+## KROK 5 — Sprzątanie (opcjonalne)
+
+Po użyciu usuń `db/_tmp_garmin.json` (Bash: `rm db/_tmp_garmin.json` lub Filesystem MCP).

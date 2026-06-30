@@ -257,6 +257,14 @@ def main():
 
     print(build_table(details, laps, streams))
 
+    # Save to DB (errors -> stderr to keep stdout clean for Claude)
+    try:
+        from strava_save import save_strava_run
+        run_id = save_strava_run(details, laps, streams)
+        print(f"\n<!-- saved to DB: run_id={run_id} (source=strava) -->", file=sys.stderr)
+    except Exception as e:
+        print(f"\n<!-- DB save failed: {e} -->", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

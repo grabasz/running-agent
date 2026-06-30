@@ -27,3 +27,21 @@ Thumbs.db
 
 # Logs
 *.log
+
+# DB — per-user local SQLite + cloud secrets (never commit)
+starter_files/db/data.db
+starter_files/db/data.db-*
+starter_files/db/data_replica.db*
+starter_files/db/.env
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Auto-generated user-facing files (regenerated from DB by skills)
+starter_files/volume_log.md
+starter_files/garmin_workouts/gym/gym_log.md
+
+# Streamlit cache
+.streamlit/

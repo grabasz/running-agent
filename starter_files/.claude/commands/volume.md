@@ -1,13 +1,25 @@
-Update volume_log.md with weekly running mileage from Strava.
+Zaktualizuj `volume_log.md` tygodniowym kilometrażem ze Stravy **+ zapisz do DB** (`weekly_volume`).
 
-**STEP 1** — run the script:
+**KROK 1** — uruchom skrypt:
 ```
 python scripts/volume.py
 ```
 
-The script pulls 13 weeks of activities directly from the Strava API (shared auth with strava-mcp via `~/.config/strava-mcp/config.json` — refresh tokens get written back so MCP stays in sync), aggregates by Monday-anchored week, and overwrites `volume_log.md`. Columns: km, elevation gain (real values, not zeros!), time, run count, longest run, trend (recovery/peak).
+Skrypt:
+1. Pobiera 13 tygodni aktywności z API Stravy (auth wspólne ze strava-mcp)
+2. Agreguje tygodniowo (poniedziałek-anchored)
+3. Nadpisuje `volume_log.md` (km, wzn., czas, liczba biegów, najdłuższy, trend)
+4. **Upsertuje do `db.weekly_volume`** (stderr: `<!-- saved N weeks to DB.weekly_volume -->`)
 
-Script output is one line: `Zapisano N tygodni → volume_log.md (avg X km/tydzień)`.
+Output stdout to jedna linia: `Zapisano N tygodni → volume_log.md (avg X km/tydzień)`.
 
-**STEP 2** — show the result:
-Read `volume_log.md` and display the table. Add 1-2 sentences of commentary: weekly average, peak week, any trend.
+**KROK 2** — wyświetl wynik:
+Przeczytaj `volume_log.md` i pokaż użytkownikowi tabelę. Dodaj 1-2 zdania komentarza: średnia tygodniowa, najwyższy tydzień, ewentualny trend (peak/recovery).
+
+**KROK 3 (opcjonalnie)** — pytania historyczne idą prosto do DB, nie wymagają re-fetch:
+```python
+import sys; sys.path.insert(0, "db"); import api
+with api.connect() as conn:
+    rows = list(api.weekly_volume.recent(conn, weeks=14))
+    # albo: api.weekly_volume.avg_last_n_weeks(conn, weeks=4)
+```

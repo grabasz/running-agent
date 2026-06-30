@@ -1,296 +1,168 @@
 # skills_gym.md — Garmin Strength Workout Generator
 
 ## When to load
-Load this file only when the user asks to generate a **strength/gym workout JSON** for Garmin Connect.
+Load this file **only when the user asks to generate a strength/gym workout JSON** for Garmin Connect.
 Do NOT load for running workout generation — use `skills_garmin.md` for that.
 
 ---
 
-## What this file does
-Generates Garmin Connect strength workout JSON files that can be imported via the Garmin Workout Importer Chrome extension.
+## Source of truth: `garmin_workouts/templates/Exercises.json`
 
-**Import path:** Garmin Connect → Create Workout (Running) → switch to Strength Training → import JSON
-Or use the Chrome extension on https://connect.garmin.com/modern/workout/create/running
+Garmin provides an official library of **47 categories and ~1500 exercises** at `garmin_workouts/templates/Exercises.json` (format: `{"categories": {CAT_NAME: {"exercises": {EX_NAME: {...}}}}}`).
+
+**ALWAYS parse this file** before writing any `category` or `exerciseName`. Importer rejects file with `{message: "Invalid category", error: "BadRequestException"}` if values don't match.
+
+```python
+import json
+with open(r"C:\Users\grabb\Documents\running\garmin_workouts\templates\Exercises.json") as f:
+    data = json.load(f)
+for cat_name, cat_data in data["categories"].items():
+    for ex_name in cat_data["exercises"].keys():
+        if "CLAM" in ex_name:
+            print(f"{cat_name} / {ex_name}")
+# -> BANDED_EXERCISES / CLAM_SHELLS
+```
+
+### The 47 valid categories
+BANDED_EXERCISES, BATTLE_ROPE, BENCH_PRESS, BIKE_OUTDOOR, CALF_RAISE, CARDIO, CARRY, CHOP, CORE, CRUNCH, CURL, DEADLIFT, ELLIPTICAL, FLOOR_CLIMB, FLYE, HIP_RAISE, HIP_STABILITY, HIP_SWING, HYPEREXTENSION, INDOOR_BIKE, LADDER, LATERAL_RAISE, LEG_CURL, LEG_RAISE, LUNGE, OLYMPIC_LIFT, PLANK, PLYO, PULL_UP, PUSH_UP, ROW, RUN, RUN_INDOOR, SANDBAG, SHOULDER_PRESS, SHOULDER_STABILITY, SHRUG, SIT_UP, SLED, SLEDGE_HAMMER, SQUAT, STAIR_STEPPER, SUSPENSION, TIRE, TOTAL_BODY, TRICEPS_EXTENSION, WARM_UP.
+
+### Common pitfalls (verified empirically)
+- Exact spelling matters: `CLAM_SHELLS` (with S and `_`), not `CLAMSHELL`. `DEAD_BUG` (with `_`), not `DEADBUG` (which also exists, but in BANDED_EXERCISES).
+- Same exercise can exist in multiple categories — pick by context.
+- **Bird dog is NOT in the library**. Leave `exerciseName=""` (category alone is enough, full instruction goes in `description`).
+- Categories that were **wrongly guessed and rejected**: ~~HIP~~, ~~HIPS~~, ~~CHEST~~. Use HIP_STABILITY, HIP_RAISE, HIP_SWING, BENCH_PRESS instead.
+
+### Standard mappings (prehab/runner-focused)
+| Exercise (PL) | category | exerciseName |
+|---------------|----------|--------------|
+| Clamshells z gumą | BANDED_EXERCISES | CLAM_SHELLS |
+| Side-lying leg raise z gumą | HIP_STABILITY | BAND_SIDE_LYING_LEG_RAISE |
+| Monster walks / lateral band walks | HIP_STABILITY | LATERAL_WALKS_WITH_BAND_AT_ANKLES |
+| Single-leg glute bridge | HIP_RAISE | BRIDGE_WITH_LEG_EXTENSION |
+| Bird dog | HIP_STABILITY | "" (not in library) |
+| Dead bug | HIP_STABILITY | DEAD_BUG |
+| Plank | PLANK | PLANK |
+| Side plank | PLANK | SIDE_PLANK |
+| Pompki | PUSH_UP | PUSH_UP |
+| Goblet squat | SQUAT | GOBLET_SQUAT |
+| BSS (Bulgarian split squat) | LUNGE | DUMBBELL_BULGARIAN_SPLIT_SQUAT |
+| RDL (Romanian deadlift) | DEADLIFT | ROMANIAN_DEADLIFT |
+| Wspięcia łydek stojąc | CALF_RAISE | STANDING_CALF_RAISE |
+| Warmup cardio | CARDIO | "" |
+
+For any exercise NOT in this table — parse `Exercises.json` and find exact name.
 
 ---
 
-## JSON skeleton
+## JSON top-level
 
-```json
-{
-  "workoutId": 0,
-  "ownerId": 0,
-  "workoutName": "YYYY.MM.DD Strength",
-  "description": null,
-  "sportType": {
-    "sportTypeId": 5,
-    "sportTypeKey": "strength_training",
-    "displayOrder": 5
-  },
-  "subSportType": null,
-  "estimatedDurationInSecs": 0,
-  "estimatedDistanceInMeters": 0,
-  "workoutSegments": [
-    {
-      "segmentOrder": 1,
-      "sportType": {
-        "sportTypeId": 5,
-        "sportTypeKey": "strength_training",
-        "displayOrder": 5
-      },
-      "workoutSteps": []
-    }
-  ],
-  "poolLength": null,
-  "poolLengthUnit": null,
-  "shared": false
-}
+```python
+"sportType": {"sportTypeId": 5, "sportTypeKey": "strength_training", "displayOrder": 5}
+"estimatedDistanceInMeters": 0   # NOT null — Garmin requires 0 for strength
 ```
-
-All exercises go inside `workoutSteps` array. StepIds and stepOrders are sequential integers starting at 1.
 
 ---
 
 ## Step types
 
-### Warmup step (cardio or single activation exercise)
-```json
-{
-  "type": "ExecutableStepDTO",
-  "stepId": 1,
-  "stepOrder": 1,
-  "stepType": { "stepTypeId": 1, "stepTypeKey": "warmup", "displayOrder": 1 },
-  "childStepId": null,
-  "description": "treadmill",
-  "endCondition": { "conditionTypeId": 1, "conditionTypeKey": "lap.button", "displayOrder": 1, "displayable": true },
-  "endConditionValue": 10,
-  "targetType": { "workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target", "displayOrder": 1 },
-  "targetValueOne": null, "targetValueTwo": null, "targetValueUnit": null,
-  "zoneNumber": null,
-  "secondaryTargetType": null, "secondaryTargetValueOne": null, "secondaryTargetValueTwo": null,
-  "secondaryTargetValueUnit": null, "secondaryZoneNumber": null, "endConditionZone": null,
-  "strokeType": { "strokeTypeId": 0, "strokeTypeKey": null, "displayOrder": 0 },
-  "equipmentType": { "equipmentTypeId": 0, "equipmentTypeKey": null, "displayOrder": 0 },
-  "category": "CARDIO",
-  "exerciseName": "",
-  "workoutProvider": null, "providerExerciseSourceId": null,
-  "weightValue": null, "weightUnit": null
-}
-```
-
-For a **timed warmup exercise** (e.g. 40s plank): use `"conditionTypeId": 2, "conditionTypeKey": "time"` and `"endConditionValue": 40` (seconds).
-
-### Rest step (between sets or between exercise groups)
-```json
-{
-  "type": "ExecutableStepDTO",
-  "stepId": 2,
-  "stepOrder": 2,
-  "stepType": { "stepTypeId": 5, "stepTypeKey": "rest", "displayOrder": 5 },
-  "childStepId": null,
-  "description": null,
-  "endCondition": { "conditionTypeId": 1, "conditionTypeKey": "lap.button", "displayOrder": 1, "displayable": true },
-  "endConditionValue": 10,
-  "targetType": { "workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target", "displayOrder": 1 },
-  "targetValueOne": null, "targetValueTwo": null, "targetValueUnit": null,
-  "zoneNumber": null,
-  "secondaryTargetType": null, "secondaryTargetValueOne": null, "secondaryTargetValueTwo": null,
-  "secondaryTargetValueUnit": null, "secondaryZoneNumber": null, "endConditionZone": null,
-  "strokeType": { "strokeTypeId": 0, "strokeTypeKey": null, "displayOrder": 0 },
-  "equipmentType": { "equipmentTypeId": 0, "equipmentTypeKey": null, "displayOrder": 0 },
-  "category": null, "exerciseName": null,
-  "workoutProvider": null, "providerExerciseSourceId": null,
-  "weightValue": null, "weightUnit": null
-}
-```
-
-### Exercise set (reps-based, inside RepeatGroup)
-```json
-{
-  "type": "ExecutableStepDTO",
-  "stepId": 8,
-  "stepOrder": 8,
-  "stepType": { "stepTypeId": 3, "stepTypeKey": "interval", "displayOrder": 3 },
-  "childStepId": 1,
-  "description": null,
-  "endCondition": { "conditionTypeId": 10, "conditionTypeKey": "reps", "displayOrder": 10, "displayable": true },
-  "endConditionValue": 10,
-  "targetType": { "workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target", "displayOrder": 1 },
-  "targetValueOne": null, "targetValueTwo": null, "targetValueUnit": null,
-  "zoneNumber": null,
-  "secondaryTargetType": null, "secondaryTargetValueOne": null, "secondaryTargetValueTwo": null,
-  "secondaryTargetValueUnit": null, "secondaryZoneNumber": null, "endConditionZone": null,
-  "strokeType": { "strokeTypeId": 0, "strokeTypeKey": null, "displayOrder": 0 },
-  "equipmentType": { "equipmentTypeId": 0, "equipmentTypeKey": null, "displayOrder": 0 },
-  "category": "SQUAT",
-  "exerciseName": "GOBLET_SQUAT",
-  "workoutProvider": null, "providerExerciseSourceId": null,
-  "weightValue": 24,
-  "weightUnit": { "unitId": 8, "unitKey": "kilogram", "factor": 1000 }
-}
-```
-
-For **bodyweight** (no weight): `"weightValue": null, "weightUnit": null`
-
-For **time-based** exercise (e.g. 45s plank): `"conditionTypeId": 2, "conditionTypeKey": "time"` and `"endConditionValue": 45`
-
-### RepeatGroup (3 sets of one exercise)
-`childStepId` increments per exercise group (1, 2, 3, …). All steps inside the group share the same `childStepId`.
-
-```json
-{
-  "type": "RepeatGroupDTO",
-  "stepId": 7,
-  "stepOrder": 7,
-  "stepType": { "stepTypeId": 6, "stepTypeKey": "repeat", "displayOrder": 6 },
-  "childStepId": 1,
-  "numberOfIterations": 3,
-  "workoutSteps": [
-    { /* exercise step with childStepId: 1 */ },
-    { /* rest step with childStepId: 1 */ }
-  ],
-  "endConditionValue": 3,
-  "endCondition": { "conditionTypeId": 7, "conditionTypeKey": "iterations", "displayOrder": 7, "displayable": false },
-  "skipLastRestStep": true,
-  "smartRepeat": false
-}
-```
-
-Set `"skipLastRestStep": true` to skip the rest after the final set (user rests before moving to the next exercise block).
-Set `"skipLastRestStep": false` if you want the rest to run after every set including the last.
+| ID | Key | Use |
+|----|-----|-----|
+| 1 | warmup | Warmup (cardio + dynamic stretch, lap.button) |
+| 3 | interval | Main exercise step (reps or time-based) |
+| 5 | rest | Between sets and between exercise blocks (lap.button) |
+| 6 | repeat | RepeatGroupDTO for N sets of one exercise |
 
 ---
 
-## Typical workout structure
+## End conditions
 
+| ID | Key | endConditionValue | endConditionCompare | preferredEndConditionUnit |
+|----|-----|-------------------|---------------------|---------------------------|
+| 1 | lap.button | 10 | null | null |
+| 2 | time | seconds | null | null |
+| 10 | reps | rep count | null | null |
+
+For **reps-based** exercise: `conditionTypeId: 10, conditionTypeKey: "reps"`, value = rep count.
+For **time-based** (plank, side plank): `conditionTypeId: 2, conditionTypeKey: "time"`, value in seconds.
+
+---
+
+## Pattern: each exercise = RepeatGroup[exercise + rest]
+
+To do N sets of one exercise, wrap `[exercise, rest]` in `RepeatGroupDTO` with `numberOfIterations=N` and `skipLastRestStep=True` (skip rest after last set — outer rest between exercises kicks in).
+
+**NEVER use `RepeatGroupDTO` with `numberOfIterations=1`** — Garmin rejects the file. A single exercise = plain `ExecutableStepDTO` (with rest after if needed). Combine warmup mobility (leg swings + hip circles + cat-cow) into **ONE** warmup CARDIO step with all movements in description.
+
+### Rest between exercise blocks
+After each Repeat (= after each exercise), insert `rest(order, None)` with `childStepId=None`. This is an **outer rest**, not inside any Repeat. Without it, importer may reject the file.
+
+---
+
+## description per exercise — CRITICAL
+
+In `description` of every ExecutableStepDTO, write the full execution instruction (form cues, breathing, modifications). User reads this **on the watch** during the workout — it's a substitute for a coach. ~150-250 ASCII characters, no decorations.
+
+### Weight signaling — 3 places must agree
+
+If the exercise is meant to be **bodyweight** (no load):
+- `exerciseName`: do NOT use prefix `DUMBBELL_`/`BARBELL_`/`KETTLEBELL_` (suggests equipment). Pick a neutral name from the library (e.g. `BULGARIAN_SPLIT_SQUAT` not `DUMBBELL_BULGARIAN_SPLIT_SQUAT`), or leave `exerciseName=""`.
+- `weightValue: 0`
+- **First line of `description`** MUST say: `WAGA: BEZ OBCIAZENIA` (or `WAGA: 22kg LEKKO (powod)` if reduced weight). Don't hide weight info inside a sentence — user scrolls the description on the watch and reads the start.
+
+Rules:
+- `weightValue: 0` + `WAGA: BEZ OBCIAZENIA` first line — bodyweight due to injury/movement learning
+- `weightValue: X` + `WAGA: Xkg LEKKO (reason)` first line — reduced weight from specific reason (back fatigue, post-incident)
+- `weightValue: X` (no annotation) — normal working weight
+
+If the plan modifies an exercise for injury — conflict between name (DUMBBELL_X), `weightValue` (0), and description ("@bodyweight" hidden in mid-sentence) = user will take the weight. Verified empirically 27.06.2026.
+
+---
+
+## Workout structure (typical)
+
+1. **Warmup** (CARDIO, lap.button) — rower/treadmill + dynamic stretch
+2. **CNS prep / pre-plyo** (optional) — pogo hops, A-skips. BEFORE main strength because requires fresh CNS.
+3. **Main strength** (equipment, fresh CNS) — multi-joint big lifts (squat, BSS, RDL)
+4. **Accessory** (single-joint, isolation) — calf raise, side plank with leg lift
+5. **Core finisher** — plank, dead bug, bird dog
+6. Between blocks: outer `rest(order, None)` with `childStepId=None`
+
+---
+
+## Helper functions (DRY)
+
+Strength workouts have a LOT of repetitive boilerplate (each exercise = 25 lines of ExecutableStepDTO). Define at the start:
+
+```python
+def ex(order, child, category, name, reps, weight, desc):
+    # full ExecutableStepDTO reps-based
+def ex_time(order, child, category, name, secs, desc):
+    # same but time-based (for plank etc)
+def rest(order, child):
+    # rest step lap.button
+def repeat(order, child, iters, steps):
+    # RepeatGroupDTO with skipLastRestStep=True
 ```
-warmup steps (cardio + activation exercises)
-rest step
-RepeatGroup (exercise A, 3×N reps + rest)    ← childStepId: 1
-rest step  (between exercise groups)
-RepeatGroup (exercise B, 3×N reps + rest)    ← childStepId: 2
-rest step
-RepeatGroup (exercise C, 3×N reps + rest)    ← childStepId: 3
-...
-standalone timed exercise (e.g. plank hold at end)
-```
+
+Reference implementations: `templates/Codzienny_Beton.json`, `2026.06.27_Silownia_A_Prehab.json`.
 
 ---
 
-## Exercise lookup table
+## Naming convention
 
-Format: **Description** → `"category": "X", "exerciseName": "Y"`
-
-### Legs / lower body
-| Exercise | category | exerciseName |
-|----------|----------|--------------|
-| Goblet squat | `SQUAT` | `GOBLET_SQUAT` |
-| Barbell back squat | `SQUAT` | `BARBELL_BACK_SQUAT` |
-| Dumbbell squat | `SQUAT` | `DUMBBELL_SQUAT` |
-| Overhead squat | `SQUAT` | `OVERHEAD_SQUAT` |
-| Bulgarian split squat (barbell) | `LUNGE` | `BARBELL_BULGARIAN_SPLIT_SQUAT` |
-| Bulgarian split squat (dumbbell) | `LUNGE` | `DUMBBELL_BULGARIAN_SPLIT_SQUAT` |
-| Walking lunge with dumbbells overhead | `LUNGE` | `DUMBBELL_OVERHEAD_WALKING_LUNGE` |
-| Reverse lunge with dumbbells | `LUNGE` | `DUMBBELL_REVERSE_LUNGE` |
-| Side lunge | `LUNGE` | `SIDE_LUNGE` |
-| Romanian deadlift (RDL) | `DEADLIFT` | `ROMANIAN_DEADLIFT` |
-| Single-leg RDL with dumbbells | `DEADLIFT` | `SINGLE_LEG_ROMANIAN_DEADLIFT_WITH_DUMBBELL` |
-| Barbell deadlift | `DEADLIFT` | `BARBELL_DEADLIFT` |
-| Dumbbell straight-leg deadlift | `DEADLIFT` | `DUMBBELL_STRAIGHT_LEG_DEADLIFT` |
-| Calf raise (standing) | `CALF_RAISE` | `STANDING_CALF_RAISE` |
-| Single-leg calf raise | `CALF_RAISE` | `SINGLE_LEG_STANDING_CALF_RAISE` |
-| Step up (dumbbell) | `SQUAT` | `DUMBBELL_STEP_UP` |
-| Box jump | `JUMP` | `BOX_JUMP` |
-
-### Hips / glutes / stability
-| Exercise | category | exerciseName |
-|----------|----------|--------------|
-| Hip thrust (barbell) | `HIP_RAISE` | `BARBELL_HIP_THRUST_WITH_BENCH` |
-| Single-leg hip raise | `HIP_RAISE` | `SINGLE_LEG_HIP_RAISE` |
-| Glute bridge | `HIP_RAISE` | `HIP_RAISE` |
-| Kettlebell swing | `HIP_RAISE` | `KETTLEBELL_SWING` |
-| Dead bug | `HIP_STABILITY` | `DEAD_BUG` |
-| Side-lying leg raise | `HIP_STABILITY` | `SIDE_LYING_LEG_RAISE` |
-| Clamshell | `HIP_RAISE` | `CLAMS` |
-| Quadruped hip extension | `HIP_STABILITY` | `QUADRUPED_HIP_EXTENSION` |
-| Standing hip abduction | `HIP_STABILITY` | `STANDING_HIP_ABDUCTION` |
-
-### Pull / back
-| Exercise | category | exerciseName |
-|----------|----------|--------------|
-| Pull-up | `PULL_UP` | `PULL_UP` |
-| Chin-up | `PULL_UP` | `CHIN_UP` |
-| Barbell row | `ROW` | `BARBELL_ROW` |
-| Dumbbell row | `ROW` | `DUMBBELL_ROW` |
-| Face pull | `ROW` | `FACE_PULL` |
-| Seated cable row | `ROW` | `SEATED_CABLE_ROW` |
-| Inverted row / Australian row | `ROW` | `BARBELL_ROW` |
-| Hanging leg raise | `LEG_RAISE` | `HANGING_LEG_RAISE` |
-| Hanging knee raise | `LEG_RAISE` | `HANGING_KNEE_RAISE` |
-
-### Push / chest / shoulders
-| Exercise | category | exerciseName |
-|----------|----------|--------------|
-| Dumbbell bench press | `BENCH_PRESS` | `DUMBBELL_BENCH_PRESS` |
-| Barbell bench press | `BENCH_PRESS` | `BARBELL_BENCH_PRESS` |
-| Incline dumbbell bench press | `BENCH_PRESS` | `INCLINE_DUMBBELL_BENCH_PRESS` |
-| Push-up | `PUSH_UP` | `PUSH_UP` |
-| Overhead dumbbell press | `SHOULDER_PRESS` | `OVERHEAD_DUMBBELL_PRESS` |
-| Barbell overhead press | `SHOULDER_PRESS` | `BARBELL_SHOULDER_PRESS` |
-| Lateral raise standing (L-raise) | `SHOULDER_STABILITY` | `STANDING_L_RAISE` |
-| Dumbbell front raise | `SHOULDER_PRESS` | `DUMBBELL_FRONT_RAISE` |
-
-### Core / plank
-| Exercise | category | exerciseName |
-|----------|----------|--------------|
-| Plank (standard) | `PLANK` | `PLANK` |
-| Side plank | `PLANK` | `SIDE_PLANK` |
-| Two-point plank (1 arm 1 leg) | `PLANK` | `TWO_POINT_PLANK` |
-| Plank with arm raise | `PLANK` | `PLANK_WITH_ARM_RAISE` |
-| Mountain climber | `PLANK` | `MOUNTAIN_CLIMBER` |
-| Dead bug | `HIP_STABILITY` | `DEAD_BUG` |
-| L-sit | `CORE` | `L_SIT` |
-| Bicycle crunch | `CORE` | `BICYCLE` |
-| Jackknife (Swiss ball) | `CORE` | `SWISS_BALL_JACKKNIFE` |
-| Russian twist | `CORE` | `RUSSIAN_TWIST` |
-| Leg raise (lying) | `LEG_RAISE` | `LYING_STRAIGHT_LEG_RAISE` |
-
-### Arms
-| Exercise | category | exerciseName |
-|----------|----------|--------------|
-| Dumbbell biceps curl | `CURL` | `DUMBBELL_BICEPS_CURL` |
-| Barbell biceps curl | `CURL` | `BARBELL_BICEPS_CURL` |
-| Hammer curl | `CURL` | `DUMBBELL_HAMMER_CURL` |
-| Generic curl (any) | `CURL` | `""` (empty string) |
+- **Recurring workout** (daily routine): name **without date** (e.g. "Codzienny Beton"), file `Name_Routine.json`
+- **One-off workout**: standard `YYYY.MM.DD_Type_Detail.json`
 
 ---
 
-## Cardio / machine warmup
-For treadmill, bike, or unspecified cardio: use `"category": "CARDIO", "exerciseName": ""` with `"conditionTypeId": 1, "conditionTypeKey": "lap.button"` (user presses lap when done).
-
----
-
-## Rules
-- `stepId` and `stepOrder` are the same sequential integer for each step (1, 2, 3, …) across the entire workout.
-- `childStepId` inside a RepeatGroup: assign a group index (1, 2, 3, …) — all steps in the same group share the same value.
-- Rest between sets (inside RepeatGroup): `endCondition: "lap.button"`. User presses lap when ready.
-- Rest between exercise blocks (outside RepeatGroup): also `"lap.button"` rest step.
-- Weight in kg → `"weightValue": N, "weightUnit": {"unitId": 8, "unitKey": "kilogram", "factor": 1000}`.
-- Bodyweight exercise → `"weightValue": null, "weightUnit": null`.
-- Time-based step → `"conditionTypeId": 2, "conditionTypeKey": "time"`, value in seconds.
-- Reps-based step → `"conditionTypeId": 10, "conditionTypeKey": "reps"`, value = rep count.
-- Do NOT use Polish characters in `workoutName` or `description` — Chrome importer breaks on non-ASCII.
-
----
-
-## Save pattern
+## Save pattern (Python)
 
 ```python
 import json, os, pathlib
 
-workout = { ... }  # dict built from the skeleton above
+workout = { ... }  # dict built from the structure above
 
-folder = pathlib.Path(os.path.expandvars(r"%USERPROFILE%\Documents\running\garmin_workouts\gym"))
+folder = pathlib.Path(os.path.expandvars(r"%USERPROFILE%\Documents\running\garmin_workouts\upcoming"))
 folder.mkdir(parents=True, exist_ok=True)
 filename = folder / "YYYY.MM.DD_Strength_NAME.json"
 
@@ -300,28 +172,42 @@ with open(filename, "w", encoding="utf-8") as f:
 print(f"Saved: {filename}")
 ```
 
-Use `ensure_ascii=True` — Garmin Connect importer requires plain ASCII. Special characters will be escaped automatically.
+Use `ensure_ascii=True` — Garmin Connect importer requires plain ASCII. Special characters will be escaped automatically. **NEVER use Cyrillic** — Chrome importer reads UTF-8 as Latin-1 and breaks on certain bytes.
+
+For workouts cykliczne save also via `make_garmin.save_workout()` from `garmin_workouts/make_garmin.py` (handles the ASCII encoding).
 
 ---
 
-## Reference files (local, git-ignored)
+## Reference files
 
 | File | Purpose |
 |------|---------|
-| `garmin_workouts/gym/WorkoutsPL.txt` | Full exercise list: `CATEGORY_EXERCISENAME=Polish description` |
-| `garmin_workouts/gym/ExercisesToEquipment.json` | Exercise → equipment mapping |
-| `garmin_workouts/gym/2026.05.18_Siła_TEMPLATE.json` | Real export — use as structure reference |
-
-If an exercise is not in the lookup table above, search `WorkoutsPL.txt` using the Polish name to find the `CATEGORY_EXERCISENAME` key, then split on `_` to get `category` and `exerciseName`.
+| `garmin_workouts/templates/Exercises.json` | **Source of truth** — 47 categories, ~1500 exercises |
+| `garmin_workouts/templates/REFERENCE_real_garmin_export.json` | Real Garmin export — structure reference |
+| `garmin_workouts/upcoming/2026.06.27_Silownia_A_Prehab.json` | Latest working strength example |
+| `garmin_workouts/upcoming/Codzienny_Beton.json` | Daily routine (no date in name) |
 
 ---
 
-## Quick generation checklist
+## Garmin Chrome importer
 
-1. Ask the user: exercises, sets×reps, weights (or bodyweight), rest preference (lap button = flexible, or fixed seconds)
-2. Build warmup section (cardio + 1–2 activation exercises)
-3. Build one RepeatGroup per exercise (3 sets default, adjust if user specifies)
-4. Add rest step between groups
-5. Name the file `YYYY.MM.DD_Strength_FOCUS.json` (ASCII only)
-6. Save to `garmin_workouts/gym/` using the save pattern above
-7. Tell user: open Garmin Connect → Create Workout → change sport to Strength → use Chrome extension to import
+https://chromewebstore.google.com/detail/odgdfpclpfmmemajpmgfipfdfmjgihac
+
+Import path: Garmin Connect → Create Workout (Running) → switch to Strength Training → import JSON.
+
+---
+
+## Pre-save checklist
+
+- [ ] `sportTypeId=5`, `estimatedDistanceInMeters=0`
+- [ ] Every `category` is from the 47-list above (verified)
+- [ ] Every `exerciseName` exists in `Exercises.json` OR is `""`
+- [ ] Reps-based exercise: `conditionTypeId=10`
+- [ ] Time-based exercise: `conditionTypeId=2`
+- [ ] Each exercise wrapped in `RepeatGroupDTO` with `numberOfIterations >= 2`
+- [ ] `skipLastRestStep=True` in every RepeatGroup
+- [ ] Outer `rest(order, None)` after each Repeat
+- [ ] If bodyweight: `weightValue=0` + neutral `exerciseName` + `WAGA: BEZ OBCIAZENIA` first line of description
+- [ ] No Cyrillic chars anywhere
+- [ ] Saved via `make_garmin.save_workout()` or direct write with `ensure_ascii=True`
+- [ ] Filename: recurring → `Name_Routine.json`; one-off → `YYYY.MM.DD_Type_Detail.json`
