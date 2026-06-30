@@ -43,5 +43,7 @@ __pycache__/
 starter_files/volume_log.md
 starter_files/garmin_workouts/gym/gym_log.md
 
-# Streamlit cache
-.streamlit/
+# Streamlit — keep config.toml + secrets.toml.example, hide live secrets + cache
+starter_files/.streamlit/secrets.toml
+.streamlit/secrets.toml
+.streamlit/cache/
