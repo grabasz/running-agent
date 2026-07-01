@@ -126,8 +126,10 @@ def bootstrap_cloud(force: bool = False) -> Path | None:
     # Make sync.py write to the replica, not the dev data.db.
     _sync.LOCAL_DB = replica
     # Materialise schema first so pull's DELETE/INSERT has tables to target.
+    # reset=True: replica is disposable — wipe any stale schema from a previous deploy
+    # (otherwise a leftover replica file will miss tables added by newer migrations).
     _init_db.DB_PATH = replica
-    _init_db.init(reset=False)
+    _init_db.init(reset=True)
 
     _pull(verbose=False)
 
