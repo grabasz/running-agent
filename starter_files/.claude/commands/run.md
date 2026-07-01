@@ -97,3 +97,17 @@ Oblicz VDOT z czasu i dystansu. Porównaj z `fitness.md`.
 ## KROK 5 — Sprzątanie (opcjonalne)
 
 Po użyciu usuń `db/_tmp_garmin.json` (Bash: `rm db/_tmp_garmin.json` lub Filesystem MCP).
+
+---
+
+## KROK 6 — Push do Turso (OBOWIĄZKOWY, na końcu)
+
+Zawsze po zapisie do DB — bez pytania usera:
+
+```
+python db/sync.py push
+```
+
+Na końcu wypisz krótko: `☁️ Turso: OK` (lub błąd + info że lokalne zmiany zostały, do retry).
+
+To samo dotyczy `mark_status` na `planned_workouts` (link z zapisanego biegu / update statusu). Cel: mobile / dashboard mają aktualne dane bez przypominania.

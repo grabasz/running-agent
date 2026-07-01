@@ -122,6 +122,38 @@ def q_current_week():
         return [dict(r) for r in api.planned.current_week(conn)]
 
 
+@st.cache_data(ttl=15)
+def q_current_week_with_components():
+    """Zwraca plany bieżącego tygodnia z komponentami zgroupowanymi per planned_id."""
+    with api.connect() as conn:
+        week = [dict(r) for r in api.planned.current_week(conn)]
+        by_planned: dict[int, list[dict]] = {}
+        for p in week:
+            comps = [dict(c) for c in api.planned.components_for(conn, planned_workout_id=p["id"])]
+            by_planned[p["id"]] = comps
+    return week, by_planned
+
+
+def _apply_component_status(component_id: int, planned_id: int, status_key: str, notes: str | None) -> None:
+    """Callback: update komponentu, sync parent, push do Turso, unieważnij cache."""
+    with api.connect() as conn:
+        api.planned.mark_component_status(
+            conn, id=component_id, status_key=status_key, actual_notes=notes or None
+        )
+        api.planned.sync_parent_status_from_components(conn, planned_workout_id=planned_id)
+        conn.commit()
+    # Cache-bust: kolejne quiery zobaczą świeże dane
+    q_current_week.clear()
+    q_current_week_with_components.clear()
+    q_today.clear()
+    # Turso push - best effort, nie przerywaj UI gdy padnie
+    try:
+        from sync import push as _push  # type: ignore
+        _push(verbose=False)
+    except Exception as e:
+        st.warning(f"Push do Turso nieudany: {e}")
+
+
 @st.cache_data(ttl=60)
 def q_weekly_volume(weeks=12):
     with api.connect() as conn:
@@ -244,29 +276,73 @@ def page_overview():
 
     with left:
         st.subheader("📅 Bieżący tydzień")
-        week = q_current_week()
+        week, comps_by_pid = q_current_week_with_components()
         if not week:
             st.info("Brak planu na ten tydzień. Edytuj `db/seed_current_week.py` i uruchom.")
         else:
-            df = pd.DataFrame(week)
-            df["display"] = (
-                df["status_icon"].fillna("") + " " +
-                df["type_icon"].fillna("") + " " +
-                df["title"].fillna("")
-            )
-            def _fmt_weather(r):
-                if not pd.notna(r['weather_temp_c']):
-                    return ""
-                temp = f"{int(r['weather_temp_c'])}°C"
-                note = r['weather_note'] if pd.notna(r['weather_note']) else ""
-                return f"{temp} · {note}" if note else temp
-            df["pogoda"] = df.apply(_fmt_weather, axis=1)
-            st.dataframe(
-                df[["date", "display", "pogoda"]].rename(columns={
-                    "date": "Data", "display": "Plan", "pogoda": "Pogoda"
-                }),
-                hide_index=True, use_container_width=True,
-            )
+            CATEGORY_TABS = [
+                ("run",      "🏃 Biegi"),
+                ("strength", "💪 Siłownia"),
+                ("other",    "🧘 Inne"),  # recovery / cross / mobility
+            ]
+            STATUS_OPTIONS = [
+                ("planned",  "⏸️ Zaplanowany"),
+                ("done",     "✅ Wykonany"),
+                ("modified", "⚠️ Zmodyfikowany"),
+                ("skipped",  "❌ Pominięty"),
+            ]
+            status_labels = {k: v for k, v in STATUS_OPTIONS}
+            status_keys = [k for k, _ in STATUS_OPTIONS]
+
+            def _cat_bucket(p):
+                c = p.get("type_category")
+                return c if c in ("run", "strength") else "other"
+
+            tabs = st.tabs([label for _, label in CATEGORY_TABS])
+            for (cat_key, _), tab in zip(CATEGORY_TABS, tabs):
+                with tab:
+                    items = [p for p in week if _cat_bucket(p) == cat_key]
+                    if not items:
+                        st.caption("_Brak wpisów w tej kategorii._")
+                        continue
+                    for p in items:
+                        pid = p["id"]
+                        comps = comps_by_pid.get(pid, [])
+                        header_bits = [
+                            p.get("status_icon") or "",
+                            p["date"],
+                            p.get("type_icon") or "",
+                            (p.get("title") or "").strip() or p.get("type_display", ""),
+                        ]
+                        header = " · ".join(b for b in header_bits if b)
+                        if p.get("weather_temp_c") is not None:
+                            wnote = p.get("weather_note") or ""
+                            header += f"  ({int(p['weather_temp_c'])}°C{(' · ' + wnote) if wnote else ''})"
+                        with st.expander(header, expanded=(p["date"] == datetime.now().strftime("%Y-%m-%d"))):
+                            if p.get("notes"):
+                                st.caption(f"📝 {p['notes']}")
+                            if not comps:
+                                st.caption("_Brak komponentów — użyj `python db/_migrate_components.py`._")
+                                continue
+                            for c in comps:
+                                cid = c["id"]
+                                col_lbl, col_status, col_notes, col_btn = st.columns([3, 2, 3, 1])
+                                col_lbl.markdown(f"{c.get('status_icon','')} **{c['label']}**")
+                                default_idx = status_keys.index(c["status_key"]) if c["status_key"] in status_keys else 0
+                                new_status = col_status.selectbox(
+                                    "Status", status_keys, index=default_idx,
+                                    format_func=lambda k: status_labels[k],
+                                    key=f"pwc_status_{cid}", label_visibility="collapsed",
+                                )
+                                new_notes = col_notes.text_input(
+                                    "Notatka", value=c.get("actual_notes") or "",
+                                    key=f"pwc_notes_{cid}", placeholder="notatka (opcjonalnie)",
+                                    label_visibility="collapsed",
+                                )
+                                if col_btn.button("Zapisz", key=f"pwc_save_{cid}"):
+                                    _apply_component_status(cid, pid, new_status, new_notes)
+                                    st.toast(f"✅ {c['label']} → {status_labels[new_status]}", icon="☁️")
+                                    st.rerun()
 
     with right:
         st.subheader("🩺 Stan ciała (14 dni)")

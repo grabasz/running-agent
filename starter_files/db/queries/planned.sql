@@ -153,6 +153,113 @@ SELECT s.key AS status_key, s.display_pl AS status_display,
 
 
 -- ============================================
+-- COMPONENTS (per-item odhaczanie)
+-- ============================================
+
+-- name: components_for
+-- All components of one planned workout, ordered by idx
+SELECT c.*,
+       s.key AS status_key, s.display_pl AS status_display, s.icon AS status_icon
+  FROM planned_workout_components c
+  JOIN workout_statuses s ON s.id = c.status_id
+ WHERE c.planned_workout_id = :planned_workout_id
+ ORDER BY c.order_idx, c.id;
+
+
+-- name: components_for_date
+-- All components for a given date, joined with parent context
+SELECT c.id AS component_id, c.order_idx, c.label, c.actual_notes AS component_notes,
+       cs.key AS component_status, cs.display_pl AS component_status_display, cs.icon AS component_status_icon,
+       p.id AS planned_id, p.date, p.title, p.notes AS planned_notes,
+       p.target_distance_km, p.target_pace_sec_per_km, p.target_hr_max,
+       p.weather_temp_c, p.weather_note,
+       t.key AS type_key, t.display_pl AS type_display, t.category AS type_category, t.icon AS type_icon,
+       ps.key AS planned_status
+  FROM planned_workout_components c
+  JOIN workout_statuses cs ON cs.id = c.status_id
+  JOIN planned_workouts p ON p.id = c.planned_workout_id
+  JOIN workout_types t ON t.id = p.type_id
+  JOIN workout_statuses ps ON ps.id = p.status_id
+ WHERE p.date = :date
+ ORDER BY p.id, c.order_idx, c.id;
+
+
+-- name: components_today
+-- Same as components_for_date but bound to today
+SELECT c.id AS component_id, c.order_idx, c.label, c.actual_notes AS component_notes,
+       cs.key AS component_status, cs.display_pl AS component_status_display, cs.icon AS component_status_icon,
+       p.id AS planned_id, p.date, p.title, p.notes AS planned_notes,
+       p.target_distance_km, p.target_pace_sec_per_km, p.target_hr_max,
+       p.weather_temp_c, p.weather_note,
+       t.key AS type_key, t.display_pl AS type_display, t.category AS type_category, t.icon AS type_icon,
+       ps.key AS planned_status
+  FROM planned_workout_components c
+  JOIN workout_statuses cs ON cs.id = c.status_id
+  JOIN planned_workouts p ON p.id = c.planned_workout_id
+  JOIN workout_types t ON t.id = p.type_id
+  JOIN workout_statuses ps ON ps.id = p.status_id
+ WHERE p.date = date('now')
+ ORDER BY p.id, c.order_idx, c.id;
+
+
+-- name: component_add<!
+-- Add a single component to a planned workout
+INSERT INTO planned_workout_components
+    (planned_workout_id, order_idx, label, status_id)
+VALUES
+    (:planned_workout_id, :order_idx, :label,
+     COALESCE((SELECT id FROM workout_statuses WHERE key = :status_key), 1));
+
+
+-- name: mark_component_status!
+-- Update status of a single component
+UPDATE planned_workout_components
+   SET status_id = (SELECT id FROM workout_statuses WHERE key = :status_key),
+       actual_notes = COALESCE(:actual_notes, actual_notes),
+       updated_at = datetime('now')
+ WHERE id = :id;
+
+
+-- name: component_by_id^
+SELECT c.*,
+       s.key AS status_key, s.display_pl AS status_display, s.icon AS status_icon,
+       p.date AS planned_date, p.title AS planned_title
+  FROM planned_workout_components c
+  JOIN workout_statuses s ON s.id = c.status_id
+  JOIN planned_workouts p ON p.id = c.planned_workout_id
+ WHERE c.id = :id;
+
+
+-- name: sync_parent_status_from_components!
+-- Aggregate: after modifying components, recompute parent status.
+-- Rules:
+--   all done      -> parent 'done'
+--   all skipped   -> parent 'skipped'
+--   any done/modified with any not-planned -> parent 'modified'
+--   all planned   -> parent 'planned'
+UPDATE planned_workouts
+   SET status_id = (
+       SELECT CASE
+           WHEN SUM(CASE WHEN cs.key = 'done'     THEN 1 ELSE 0 END) = COUNT(*) THEN (SELECT id FROM workout_statuses WHERE key = 'done')
+           WHEN SUM(CASE WHEN cs.key = 'skipped'  THEN 1 ELSE 0 END) = COUNT(*) THEN (SELECT id FROM workout_statuses WHERE key = 'skipped')
+           WHEN SUM(CASE WHEN cs.key = 'planned'  THEN 1 ELSE 0 END) = COUNT(*) THEN (SELECT id FROM workout_statuses WHERE key = 'planned')
+           ELSE (SELECT id FROM workout_statuses WHERE key = 'modified')
+       END
+       FROM planned_workout_components c
+       JOIN workout_statuses cs ON cs.id = c.status_id
+       WHERE c.planned_workout_id = :planned_workout_id
+   ),
+   updated_at = datetime('now')
+ WHERE id = :planned_workout_id
+   AND EXISTS (SELECT 1 FROM planned_workout_components WHERE planned_workout_id = :planned_workout_id);
+
+
+-- name: delete_components_for!
+-- Wipe all components for a planned workout (used when re-splitting title)
+DELETE FROM planned_workout_components WHERE planned_workout_id = :planned_workout_id;
+
+
+-- ============================================
 -- TYPES + STATUSES (helpers for UI)
 -- ============================================
 
