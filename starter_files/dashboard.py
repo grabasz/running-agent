@@ -333,14 +333,14 @@ def page_overview():
                                 new_status = col_status.selectbox(
                                     "Status", status_keys, index=default_idx,
                                     format_func=lambda k: status_labels[k],
-                                    key=f"pwc_status_{cid}", label_visibility="collapsed",
+                                    key=f"pwc_status_{cat_key}_{cid}", label_visibility="collapsed",
                                 )
                                 new_notes = col_notes.text_input(
                                     "Notatka", value=c.get("actual_notes") or "",
-                                    key=f"pwc_notes_{cid}", placeholder="notatka (opcjonalnie)",
+                                    key=f"pwc_notes_{cat_key}_{cid}", placeholder="notatka (opcjonalnie)",
                                     label_visibility="collapsed",
                                 )
-                                if col_btn.button("Zapisz", key=f"pwc_save_{cid}"):
+                                if col_btn.button("Zapisz", key=f"pwc_save_{cat_key}_{cid}"):
                                     _apply_component_status(cid, pid, new_status, new_notes)
                                     st.toast(f"✅ {c['label']} → {status_labels[new_status]}", icon="☁️")
                                     st.rerun()
