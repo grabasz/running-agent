@@ -281,6 +281,7 @@ def page_overview():
             st.info("Brak planu na ten tydzień. Edytuj `db/seed_current_week.py` i uruchom.")
         else:
             CATEGORY_TABS = [
+                ("all",      "🗓️ Wszystko"),  # default (Streamlit auto-selects first)
                 ("run",      "🏃 Biegi"),
                 ("strength", "💪 Siłownia"),
                 ("other",    "🧘 Inne"),  # recovery / cross / mobility
@@ -301,7 +302,7 @@ def page_overview():
             tabs = st.tabs([label for _, label in CATEGORY_TABS])
             for (cat_key, _), tab in zip(CATEGORY_TABS, tabs):
                 with tab:
-                    items = [p for p in week if _cat_bucket(p) == cat_key]
+                    items = week if cat_key == "all" else [p for p in week if _cat_bucket(p) == cat_key]
                     if not items:
                         st.caption("_Brak wpisów w tej kategorii._")
                         continue
