@@ -263,6 +263,24 @@ CREATE INDEX IF NOT EXISTS idx_planned_date ON planned_workouts(date);
 CREATE INDEX IF NOT EXISTS idx_planned_week ON planned_workouts(week_start);
 CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_workouts(status_id);
 
+-- Sub-components of a planned workout (per-item odhaczanie).
+-- Monolityczny wpis "REST + foam roll + Codzienny Beton" rozbija się na 3 komponenty
+-- z osobnym statusem — user może odhaczyć każdy z osobna.
+CREATE TABLE IF NOT EXISTS planned_workout_components (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    planned_workout_id  INTEGER NOT NULL REFERENCES planned_workouts(id) ON DELETE CASCADE,
+    order_idx           INTEGER NOT NULL DEFAULT 0,
+    label               TEXT NOT NULL,
+    status_id           INTEGER NOT NULL DEFAULT 1 REFERENCES workout_statuses(id),
+    actual_notes        TEXT,
+    created_at          TEXT DEFAULT (datetime('now')),
+    updated_at          TEXT,
+    UNIQUE(planned_workout_id, order_idx)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pwc_planned ON planned_workout_components(planned_workout_id);
+CREATE INDEX IF NOT EXISTS idx_pwc_status ON planned_workout_components(status_id);
+
 -- Seed lookup tables (idempotent — use INSERT OR IGNORE)
 INSERT OR IGNORE INTO workout_statuses (id, key, display_pl, display_en, icon, sort_order) VALUES
     (1, 'planned',   'Zaplanowany',   'Planned',   '⏸️',  1),

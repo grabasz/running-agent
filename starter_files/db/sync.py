@@ -67,6 +67,7 @@ TABLE_ORDER = [
     "run_laps",          # -> runs
     "run_streams",       # -> runs
     "planned_workouts",  # -> workout_types, workout_statuses, runs, gym_sessions
+    "planned_workout_components",  # -> planned_workouts, workout_statuses
 ]
 
 
