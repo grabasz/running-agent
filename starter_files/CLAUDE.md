@@ -109,7 +109,8 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 | **ostatnia siłownia / progresja BSS/RDL/squat** | **Wywołaj skill `/silownia`** (auto-fetch z Garmina, regen `gym_log.md`) |
 | **wolumen tygodniowy / km w miesiącu** | **Wywołaj skill `/volume`** (Strava → DB + markdown) lub `api.weekly_volume.recent()` |
 | **mobility / regeneracja** | **Wywołaj skill `/mobility`** |
-| **stworzyć workout Garmina** | Przeczytaj `skills_garmin.md`, sprawdź `templates/Exercises.json`, zapisz JSON do `garmin_workouts/upcoming/` |
+| **stworzyć workout Garmina + wgrać + zaplanować** | **Wywołaj skill `/workout`** (generuje JSON, zapisuje lokalnie, `mcp__garmin__create-workout` + `schedule-workout` na datę). Triggery: "utwórz trening", "wygeneruj trening X i wgraj", "workout Y", "zaplanuj X na dziś/jutro" |
+| **tylko wygenerować JSON bez wysyłki** | Przeczytaj `skills_garmin.md`, sprawdź `templates/Exercises.json`, zapisz JSON do `garmin_workouts/upcoming/`. Tylko gdy user JAWNIE mówi "sam wgrywam" / "tylko plik" |
 | **forma / postępy / podsumowanie tygodnia** | `api.weekly_volume.recent()` + `api.vdot.current()` + `api.runs.recent_with_dynamics()` + `fitness.md` |
 | **nowy blok treningowy** | `skills_planning.md` + `api.weekly_volume.recent()` (sprawdź gotowość) |
 | **PB w dystansie** | `api.race_pb(distance_km)` |

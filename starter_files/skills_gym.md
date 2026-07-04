@@ -96,6 +96,37 @@ To do N sets of one exercise, wrap `[exercise, rest]` in `RepeatGroupDTO` with `
 ### Rest between exercise blocks
 After each Repeat (= after each exercise), insert `rest(order, None)` with `childStepId=None`. This is an **outer rest**, not inside any Repeat. Without it, importer may reject the file.
 
+### Two-sided exercises (per-side) — CRITICAL
+
+Ćwiczenia wykonywane na **jedną stronę na raz** (side plank, side plank + leg lift, BSS, single-leg RDL, clam shells, dead bug per side, bird dog, single-arm row, itd.) — **muszą mieć parzystą liczbę serii**, żeby każda strona dostała tyle samo pracy.
+
+**Zła konfiguracja (verified empirically 03.07.2026):**
+- Side plank + leg lift 3 serie po 20s → seria 1 prawa, seria 2 lewa, seria 3 prawa → **prawa 2×, lewa 1×**.
+- Jeśli asymetria dodatnio-koreluje ze słabszą stroną (prawa słabsza + prawa 2×) — user robi więcej pracy na słabszej stronie, co daje mylące dane diagnostyczne i przeciąża tę stronę.
+
+**Poprawna konfiguracja:**
+
+Opcja A — parzysta liczba serii (3 → 4 lub 6):
+```
+Side plank + leg lift: 4 serie po 20s (prawa/lewa/prawa/lewa = 2×2)
+```
+
+Opcja B — 1 seria = obie strony w kolejności (opisz w `description`):
+```
+Side plank + leg lift: 3 serie. Każda seria = 20s prawa + 20s lewa
+z ~5s przejściem. Duration step = 45s.
+description: "Set N: 20s prawa noga → obrót → 20s lewa noga. Kontrola technika."
+```
+
+Opcja C — RepeatGroup dwustronny (osobne stepy L/R z rest 30s między):
+```
+RepeatGroup iters=N, workoutSteps=[side_plank_R, rest(30s), side_plank_L, rest(60s_end_of_set)]
+```
+
+**Domyślnie stosuj opcję A** — najczytelniej dla usera na zegarku, każdy step w timeline reprezentuje jedną stronę. W `description` **jasno pisz którą stronę robi w tym stepie** (np. "Set 1: PRAWA noga uniesiona", "Set 2: LEWA noga uniesiona").
+
+Ta reguła dotyczy WSZYSTKICH ćwiczeń per-side (BSS, single-leg RDL, single-arm, side plank, itd.) chociaż dla BSS/single-arm często robi się "seria = obie strony" i nie ma tego problemu — kluczowe jest **żeby licznik serii i sposób wykonania były zgodne w description**.
+
 ---
 
 ## description per exercise — CRITICAL
@@ -207,6 +238,7 @@ Import path: Garmin Connect → Create Workout (Running) → switch to Strength 
 - [ ] Each exercise wrapped in `RepeatGroupDTO` with `numberOfIterations >= 2`
 - [ ] `skipLastRestStep=True` in every RepeatGroup
 - [ ] Outer `rest(order, None)` after each Repeat
+- [ ] **Two-sided exercise (side plank, single-leg, BSS): parzysta liczba serii LUB jawnie w description "seria = prawa + lewa"** (verified 03.07.2026)
 - [ ] If bodyweight: `weightValue=0` + neutral `exerciseName` + `WAGA: BEZ OBCIAZENIA` first line of description
 - [ ] No Cyrillic chars anywhere
 - [ ] Saved via `make_garmin.save_workout()` or direct write with `ensure_ascii=True`
