@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # Running Agent - Sync Script
 # ============================================================
 # Updates your personal running folder from the repo.
@@ -122,36 +122,29 @@ if (Test-Path $legacySkills) {
 Write-Host ""
 Write-Host "[2/4] Updating framework files (skills + phases)..." -ForegroundColor Yellow
 
-$frameworkFiles = @(
-    "CLAUDE.md",
-    "skills_core.md",
-    "skills_activity.md",
-    "skills_planning.md",
-    "skills_garmin.md",
-    "skills_gym.md",
-    "garmin_gen.py",
-    "elev_per_km.py",
-    "scripts\weekly_volume.py",
-    "skills_phases\phase0_run_walk.md",
-    "skills_phases\phase1_base.md",
-    "skills_phases\phase2_early_quality.md",
-    "skills_phases\phase3_late_quality.md",
-    "skills_phases\phase4_taper.md",
-    "garmin_workouts\templates\REFERENCE_real_garmin_export.json",
-    ".claude\commands\run.md",
-    ".claude\commands\volume.md"
+# Personal data files — NEVER overwritten by sync (handled in section 3)
+$personalFiles = @(
+    "profile.md",
+    "fitness.md",
+    "races.md",
+    "plan_current.md",
+    "groups.md",
+    "project_instructions.txt",
+    "db\seed_current_week.py",
+    ".streamlit\secrets.toml.example",
+    "garmin_workouts\upcoming\README.md",
+    "garmin_workouts\archive\README.md"
 )
 
-foreach ($file in $frameworkFiles) {
-    $src = Join-Path $starterDir $file
+# Framework = everything else in starter_files (skills, commands, db\, scripts\,
+# dashboard, templates) — always overwritten from repo.
+foreach ($item in (Get-ChildItem $starterDir -Recurse -File -Force)) {
+    $file = $item.FullName.Substring($starterDir.Length + 1)
+    if ($personalFiles -contains $file) { continue }
     $dst = Join-Path $InstallPath $file
-    if (-not (Test-Path $src)) {
-        Write-Action "MISSING in repo:" $file "Red"
-        continue
-    }
     $action = if (Test-Path $dst) { "OVERWRITE" } else { "CREATE   " }
     Write-Action "$action :" $file "Green"
-    Copy-IfReal $src $dst
+    Copy-IfReal $item.FullName $dst
 }
 
 # ============================================================
@@ -160,14 +153,7 @@ foreach ($file in $frameworkFiles) {
 Write-Host ""
 Write-Host "[3/4] Checking personal data templates..." -ForegroundColor Yellow
 
-$templateFiles = @(
-    "profile.md",
-    "fitness.md",
-    "races.md",
-    "plan_current.md",
-    "garmin_workouts\upcoming\README.md",
-    "garmin_workouts\archive\README.md"
-)
+$templateFiles = $personalFiles
 
 foreach ($file in $templateFiles) {
     $src = Join-Path $starterDir $file
