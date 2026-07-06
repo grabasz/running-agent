@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 # Running Agent for Claude Desktop — Installer v2.0
 # https://github.com/grabasz/running-agent
 # ============================================================
@@ -83,7 +83,10 @@ Write-Step 2 $TOTAL_STEPS "Installing MCP servers..."
 $mcpPackages = @(
     "@r-huijts/strava-mcp-server",
     "@modelcontextprotocol/server-memory",
-    "@modelcontextprotocol/server-filesystem"
+    "@modelcontextprotocol/server-filesystem",
+    "@etweisberg/garmin-connect-mcp",
+    "@playwright/mcp",
+    "open-meteo-mcp-server"
 )
 
 foreach ($pkg in $mcpPackages) {
@@ -95,7 +98,7 @@ foreach ($pkg in $mcpPackages) {
         Write-Warn "$pkg — check manually if issues arise"
     }
 }
-Write-Info "Weather MCP (Open-Meteo) is built-in to Claude — no install needed"
+Write-Info "Garmin MCP login uses Playwright — Chrome/Edge must be installed (standard on Windows)"
 
 # ============================================================
 # STEP 3 — Create folder structure
@@ -129,48 +132,23 @@ Write-Step 4 $TOTAL_STEPS "Copying starter files..."
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $starterDir = Join-Path $scriptDir "starter_files"
 
-$files = @(
-    "profile.md",
-    "fitness.md",
-    "races.md",
-    "plan_current.md",
-    "groups.md",
-    "CLAUDE.md",
-    "skills_core.md",
-    "skills_garmin.md",
-    "skills_gym.md",
-    "garmin_gen.py",
-    "elev_per_km.py",
-    "project_instructions.txt",
-    "skills_phases\phase0_run_walk.md",
-    "skills_phases\phase1_base.md",
-    "skills_phases\phase2_early_quality.md",
-    "skills_phases\phase3_late_quality.md",
-    "skills_phases\phase4_taper.md",
-    "garmin_workouts\templates\REFERENCE_real_garmin_export.json",
-    "garmin_workouts\upcoming\README.md",
-    "garmin_workouts\archive\README.md",
-    ".claude\commands\run.md",
-    ".claude\commands\volume.md",
-    "scripts\weekly_volume.py"
-)
-
-foreach ($file in $files) {
-    $src = Join-Path $starterDir $file
-    $dst = Join-Path $InstallPath $file
-    if (Test-Path $src) {
-        $dstDir = Split-Path -Parent $dst
-        if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
-        if (-not (Test-Path $dst)) {
-            Copy-Item $src $dst -Force
-            Write-Info "Copied: $file"
-        } else {
-            Write-Info "Skipped (exists): $file"
-        }
+# Copy the ENTIRE starter_files tree (skills, .claude\commands, db\, scripts\,
+# garmin_workouts\, dashboard, .streamlit). Existing files are never overwritten
+# (user data safe) — use sync.ps1 to update framework files later.
+$copied = 0; $skipped = 0
+foreach ($item in (Get-ChildItem $starterDir -Recurse -File -Force)) {
+    $rel = $item.FullName.Substring($starterDir.Length + 1)
+    $dst = Join-Path $InstallPath $rel
+    $dstDir = Split-Path -Parent $dst
+    if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null }
+    if (-not (Test-Path $dst)) {
+        Copy-Item $item.FullName $dst -Force
+        $copied++
     } else {
-        Write-Warn "Not found in starter_files: $file"
+        $skipped++
     }
 }
+Write-Info "Copied: $copied file(s), skipped (already exist): $skipped"
 Write-OK "Starter files ready"
 
 # ============================================================
@@ -254,6 +232,18 @@ try {
             command = "cmd"
             args    = @("/c", "npx", "-y", "@modelcontextprotocol/server-filesystem", $InstallPath)
         }
+        "garmin" = [PSCustomObject]@{
+            command = "cmd"
+            args    = @("/c", "npx", "-y", "@etweisberg/garmin-connect-mcp")
+        }
+        "playwright" = [PSCustomObject]@{
+            command = "cmd"
+            args    = @("/c", "npx", "-y", "@playwright/mcp")
+        }
+        "weather" = [PSCustomObject]@{
+            command = "cmd"
+            args    = @("/c", "npx", "-y", "open-meteo-mcp-server")
+        }
     }
 
     foreach ($key in $newServers.Keys) {
@@ -273,49 +263,50 @@ try {
 }
 
 # ============================================================
-# STEP 7 — Update Claude Code settings.json (MCP servers)
+# STEP 7 — Create project .mcp.json (Claude Code MCP config)
 # ============================================================
-Write-Step 7 $TOTAL_STEPS "Updating Claude Code MCP config (~/.claude/settings.json)..."
+Write-Step 7 $TOTAL_STEPS "Creating project .mcp.json (Claude Code MCP config)..."
 
-$claudeCodeConfig = Join-Path $env:USERPROFILE ".claude\settings.json"
+# Claude Code reads MCP servers from <project>\.mcp.json (not settings.json).
+$mcpJsonPath = Join-Path $InstallPath ".mcp.json"
 
-if (Test-Path $claudeCodeConfig) {
-    Write-Info "Found: $claudeCodeConfig"
+if (Test-Path $mcpJsonPath) {
     try {
-        $ccRaw = Get-Content $claudeCodeConfig -Raw -Encoding UTF8
-        $ccConfig = $ccRaw | ConvertFrom-Json
+        $mcpConfig = Get-Content $mcpJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch {
-        Write-Warn "Could not parse settings.json: $_"
-        $ccConfig = [PSCustomObject]@{}
+        Write-Warn "Could not parse existing .mcp.json: $_ — leaving it untouched"
+        $mcpConfig = $null
     }
 } else {
-    Write-Info "Not found - will create: $claudeCodeConfig"
-    $ccDir = Split-Path -Parent $claudeCodeConfig
-    if (-not (Test-Path $ccDir)) { New-Item -ItemType Directory -Path $ccDir -Force | Out-Null }
-    $ccConfig = [PSCustomObject]@{}
+    $mcpConfig = [PSCustomObject]@{ mcpServers = [PSCustomObject]@{} }
 }
 
-if (-not ($ccConfig.PSObject.Properties.Name -contains "mcpServers")) {
-    $ccConfig | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
-}
-
-$ccServers = @{
-    "strava"     = [PSCustomObject]@{ command = "npx"; args = @("-y", "@r-huijts/strava-mcp-server") }
-    "memory"     = [PSCustomObject]@{ command = "npx"; args = @("-y", "@modelcontextprotocol/server-memory") }
-    "filesystem" = [PSCustomObject]@{ command = "npx"; args = @("-y", "@modelcontextprotocol/server-filesystem", $InstallPath) }
-}
-
-foreach ($key in $ccServers.Keys) {
-    if ($ccConfig.mcpServers.PSObject.Properties.Name -contains $key) {
-        Write-Info "Skipping '$key' (already in Claude Code config)"
-    } else {
-        $ccConfig.mcpServers | Add-Member -MemberType NoteProperty -Name $key -Value $ccServers[$key]
-        Write-Info "Added: $key"
+if ($mcpConfig) {
+    if (-not ($mcpConfig.PSObject.Properties.Name -contains "mcpServers")) {
+        $mcpConfig | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})
     }
-}
 
-$ccConfig | ConvertTo-Json -Depth 10 | Set-Content $claudeCodeConfig -Encoding UTF8
-Write-OK "Claude Code MCP config updated"
+    $ccServers = @{
+        "strava"     = [PSCustomObject]@{ command = "npx"; args = @("-y", "@r-huijts/strava-mcp-server") }
+        "memory"     = [PSCustomObject]@{ command = "npx"; args = @("-y", "@modelcontextprotocol/server-memory") }
+        "filesystem" = [PSCustomObject]@{ command = "npx"; args = @("-y", "@modelcontextprotocol/server-filesystem", $InstallPath) }
+        "garmin"     = [PSCustomObject]@{ command = "npx"; args = @("-y", "@etweisberg/garmin-connect-mcp") }
+        "playwright" = [PSCustomObject]@{ command = "npx"; args = @("-y", "@playwright/mcp") }
+        "weather"    = [PSCustomObject]@{ command = "npx"; args = @("-y", "open-meteo-mcp-server") }
+    }
+
+    foreach ($key in $ccServers.Keys) {
+        if ($mcpConfig.mcpServers.PSObject.Properties.Name -contains $key) {
+            Write-Info "Skipping '$key' (already in .mcp.json)"
+        } else {
+            $mcpConfig.mcpServers | Add-Member -MemberType NoteProperty -Name $key -Value $ccServers[$key]
+            Write-Info "Added: $key"
+        }
+    }
+
+    $mcpConfig | ConvertTo-Json -Depth 10 | Set-Content $mcpJsonPath -Encoding UTF8
+    Write-OK "Project .mcp.json ready: $mcpJsonPath"
+}
 
 # ============================================================
 # STEP 8 — First run setup: collect user data
@@ -388,9 +379,9 @@ Set-Content $pathFile $InstallPath -Encoding UTF8
 Write-Info "Install path saved to .install_path (sync.ps1 will use this automatically)"
 
 # ============================================================
-# STEP 9 — Install Python dependencies for /run script
+# STEP 9 — Python dependencies + database init
 # ============================================================
-Write-Step 9 $TOTAL_STEPS "Installing Python dependencies for /run script..."
+Write-Step 9 $TOTAL_STEPS "Installing Python dependencies + initializing database..."
 
 $pythonCmd = $null
 foreach ($candidate in @("python", "py", "python3")) {
@@ -401,22 +392,38 @@ foreach ($candidate in @("python", "py", "python3")) {
 }
 
 if (-not $pythonCmd) {
-    Write-Host "   ! Python not found in PATH. /run skill needs Python with 'requests' + 'truststore'." -ForegroundColor Yellow
-    Write-Host "     Install Python 3.10+ from https://python.org, then run:" -ForegroundColor Gray
-    Write-Host "       pip install -r `"$InstallPath\scripts\requirements.txt`"" -ForegroundColor Cyan
+    Write-Host "   ! Python not found in PATH. Skills (/run, /silownia, /volume) need Python 3.10+." -ForegroundColor Yellow
+    Write-Host "     Install from https://python.org, then run:" -ForegroundColor Gray
+    Write-Host "       pip install -r `"$InstallPath\scripts\requirements.txt`" -r `"$InstallPath\db\requirements.txt`"" -ForegroundColor Cyan
+    Write-Host "       python `"$InstallPath\db\init_db.py`"" -ForegroundColor Cyan
 } else {
-    $requirementsFile = Join-Path $InstallPath "scripts\requirements.txt"
-    if (Test-Path $requirementsFile) {
-        Write-Info "Found $pythonCmd; installing requests + truststore..."
-        & $pythonCmd -m pip install --quiet -r $requirementsFile
-        if ($LASTEXITCODE -eq 0) {
-            Write-OK "Python dependencies installed (/run skill ready)"
+    foreach ($reqFile in @("scripts\requirements.txt", "db\requirements.txt")) {
+        $reqPath = Join-Path $InstallPath $reqFile
+        if (Test-Path $reqPath) {
+            Write-Info "pip install -r $reqFile"
+            & $pythonCmd -m pip install --quiet -r $reqPath
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "pip install failed for $reqFile. Try manually: $pythonCmd -m pip install -r `"$reqPath`""
+            }
         } else {
-            Write-Host "   ! pip install failed. Try manually: $pythonCmd -m pip install -r `"$requirementsFile`"" -ForegroundColor Yellow
+            Write-Warn "Missing: $reqPath"
         }
-    } else {
-        Write-Host "   ! requirements.txt missing at $requirementsFile — run sync.ps1 first" -ForegroundColor Yellow
     }
+    Write-OK "Python dependencies installed"
+
+    # Initialize SQLite database (runs, gym, planned workouts, body state...)
+    $dbFile = Join-Path $InstallPath "db\data.db"
+    if (Test-Path $dbFile) {
+        Write-Info "Database already exists: $dbFile (skipping init)"
+    } else {
+        & $pythonCmd (Join-Path $InstallPath "db\init_db.py")
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Database initialized: $dbFile"
+        } else {
+            Write-Warn "DB init failed. Try manually: $pythonCmd `"$InstallPath\db\init_db.py`""
+        }
+    }
+    Write-Info "Optional cloud sync (Turso) — see db\README.md (db\.env with credentials)"
 }
 
 # ============================================================
@@ -443,8 +450,9 @@ Write-Host ""
 Write-Host "   4. Fill in your race calendar:" -ForegroundColor Gray
 Write-Host "      Edit: $InstallPath\races.md" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "   5. Install Garmin workout importer for Chrome:" -ForegroundColor Gray
-Write-Host "      https://chromewebstore.google.com/detail/odgdfpclpfmmemajpmgfipfdfmjgihac" -ForegroundColor Cyan
+Write-Host "   5. Connect Garmin — type this in Claude:" -ForegroundColor Gray
+Write-Host "      'garmin-login' (a browser window opens, log in to Garmin Connect)" -ForegroundColor Cyan
+Write-Host "      Workouts are uploaded directly via MCP (create-workout + schedule-workout)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "   6. Start your first session — say to Claude:" -ForegroundColor Gray
 Write-Host "      'What is my training plan for today?'" -ForegroundColor Cyan
