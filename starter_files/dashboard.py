@@ -360,7 +360,7 @@ def page_overview():
                             if p.get("notes"):
                                 st.caption(f"📝 {p['notes']}")
                             if not comps:
-                                st.caption("_Brak komponentów — użyj `python db/_migrate_components.py`._")
+                                st.caption("_Brak komponentów — uruchom `python db/migrate_components.py` żeby rozbić `title` po ` + `._")
                                 continue
                             for c in comps:
                                 cid = c["id"]
