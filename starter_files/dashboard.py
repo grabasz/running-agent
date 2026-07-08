@@ -44,6 +44,14 @@ if os.getenv("TURSO_DATABASE_URL") and not os.getenv("RUNNING_DB_PATH"):
 
 import api  # type: ignore
 
+# Must be the FIRST Streamlit command — before the password gate renders anything.
+st.set_page_config(
+    page_title="Bartek Running",
+    page_icon="🏃",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 
 @st.cache_resource(show_spinner="Pobieram dane z Turso…")
 def _bootstrap_once():
@@ -86,18 +94,6 @@ if not _check_password():
 
 _REPLICA = _bootstrap_once()
 _CLOUD_MODE = _REPLICA is not None
-
-
-# ============================================
-# Config
-# ============================================
-
-st.set_page_config(
-    page_title="Bartek Running",
-    page_icon="🏃",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 
 # ============================================
@@ -241,6 +237,36 @@ def fmt_time(sec):
     return f"{m}:{s:02d}"
 
 
+# Project VDOT scale (fitness.md) ≈ canonical Daniels & Gilbert VDOT + 6.3.
+# Verified against fitness.md Race Predictors @55: 20:18 / 42:21 / 1:33:43 / 3:15:28 (±5s).
+VDOT_CAL_OFFSET = 6.3
+
+
+def daniels_race_time(vdot: float, distance_m: float) -> int:
+    """Predicted race time (sec) for a project-scale VDOT — Daniels & Gilbert equations.
+
+    Solves for T where VO2(velocity) / %VO2max(T) == canonical vdot (bisection).
+    """
+    import math
+
+    vdot = vdot - VDOT_CAL_OFFSET
+
+    def pct_vo2max(t_min):
+        return 0.8 + 0.1894393 * math.exp(-0.012778 * t_min) + 0.2989558 * math.exp(-0.1932605 * t_min)
+
+    def vo2(v_m_per_min):
+        return -4.60 + 0.182258 * v_m_per_min + 0.000104 * v_m_per_min ** 2
+
+    lo, hi = 4.0, 420.0  # minutes
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if vo2(distance_m / mid) / pct_vo2max(mid) > vdot:
+            lo = mid  # running too fast for this vdot -> need more time
+        else:
+            hi = mid
+    return int(round((lo + hi) / 2 * 60))
+
+
 # ============================================
 # Page: Przegląd
 # ============================================
@@ -251,9 +277,10 @@ def page_overview():
     # --- Top metrics row ---
     vdot_hist = q_vdot_history(limit=1)
     races_hist = q_races_history()
+    races_up = q_races_upcoming()
     vol_df = q_weekly_volume(weeks=4)
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     if not vdot_hist.empty:
         v = vdot_hist.iloc[0]
         col1.metric("VDOT", int(v["vdot"]),
@@ -268,6 +295,12 @@ def page_overview():
         col3.metric("Ostatni tydzień", f"{last_week_km:.1f} km",
                     delta=f"{last_week_km - avg_4w:+.1f} vs avg 4w")
         col4.metric("Średnia 4 tyg", f"{avg_4w:.1f} km")
+    if races_up:
+        nxt = races_up[0]
+        days_left = (datetime.strptime(nxt["date"], "%Y-%m-%d").date() - datetime.now().date()).days
+        target = fmt_time(nxt["target_time_sec"]) if nxt.get("target_time_sec") else "—"
+        col5.metric(f"🏁 {nxt['name'][:20]}", f"{days_left} dni",
+                    help=f"{nxt['date']} | cel: {target}")
 
     st.divider()
 
@@ -278,7 +311,11 @@ def page_overview():
         st.subheader("📅 Bieżący tydzień")
         week, comps_by_pid = q_current_week_with_components()
         if not week:
-            st.info("Brak planu na ten tydzień. Edytuj `db/seed_current_week.py` i uruchom.")
+            st.info(
+                "Brak planu na ten tydzień. "
+                "Jeśli powinien być — kliknij **🔄 Odśwież dane** w sidebarze (stale cache). "
+                "Jeśli faktycznie nie ma → uruchom `db/seed_current_week.py`."
+            )
         else:
             CATEGORY_TABS = [
                 ("all",      "🗓️ Wszystko"),  # default (Streamlit auto-selects first)
@@ -360,8 +397,20 @@ def page_overview():
                 bdf[["date", "location", "pain_display", "notes"]].rename(columns={
                     "date": "Data", "location": "Gdzie", "pain_display": "Ból", "notes": "Notatki"
                 }),
-                hide_index=True, use_container_width=True, height=300,
+                hide_index=True, use_container_width=True, height=220,
             )
+            # Trend bólu per lokalizacja (30 dni)
+            trend = pd.DataFrame(q_body_state(since="-30 days"))
+            trend = trend[trend["pain_0_10"].notna()]
+            if not trend.empty:
+                trend["date"] = pd.to_datetime(trend["date"])
+                fig = px.line(trend.sort_values("date"), x="date", y="pain_0_10",
+                              color="location", markers=True,
+                              labels={"pain_0_10": "Ból 0-10", "date": "", "location": ""})
+                fig.update_layout(height=220, margin=dict(t=10, b=10, l=10, r=10),
+                                  yaxis=dict(range=[-0.3, 10], dtick=2),
+                                  legend=dict(orientation="h", y=-0.25))
+                st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
 
@@ -429,17 +478,28 @@ def page_running():
     dyn = q_runs_with_dynamics(since="-90 days")
     if not dyn.empty and dyn["gct_balance_left_pct"].notna().any():
         st.divider()
-        st.subheader("🦵 Running dynamics — GCT Balance L/R")
-        st.caption("50% = idealna symetria. Odchył pokazuje która noga dłużej w podporze (asymetria kompensacyjna).")
+        st.subheader("🦵 Running dynamics — GCT Balance L/R + kadencja")
+        st.caption("50% = idealna symetria; pas 49-51% = norma. Wyższa kadencja przywraca symetrię "
+                   "(potwierdzone: 170→176 spm wyprostowało balance z 48.2% do 49-50%).")
         dyn["date"] = pd.to_datetime(dyn["date"])
         dyn = dyn.sort_values("date")
         fig = go.Figure()
+        fig.add_hrect(y0=49, y1=51, fillcolor="#22c55e", opacity=0.08, line_width=0)
         fig.add_trace(go.Scatter(x=dyn["date"], y=dyn["gct_balance_left_pct"],
                                   mode="lines+markers", name="GCT bal L%",
                                   line=dict(color="#3b82f6", width=2)))
+        if "cadence_avg" in dyn.columns and dyn["cadence_avg"].notna().any():
+            fig.add_trace(go.Scatter(x=dyn["date"], y=dyn["cadence_avg"],
+                                      mode="lines+markers", name="Kadencja (spm)",
+                                      yaxis="y2", line=dict(color="#f59e0b", width=2, dash="dot")))
         fig.add_hline(y=50, line_dash="dash", line_color="gray",
                       annotation_text="symetria 50%", annotation_position="top right")
-        fig.update_layout(height=300, xaxis_title="Data", yaxis_title="L% (50 = symetria)")
+        fig.update_layout(
+            height=300, xaxis_title="Data",
+            yaxis=dict(title="L% (50 = symetria)"),
+            yaxis2=dict(title="spm", overlaying="y", side="right", showgrid=False),
+            legend=dict(orientation="h", y=1.12),
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     # Tabela
@@ -596,21 +656,14 @@ def page_races():
         fig.update_layout(height=350, xaxis_title="Data", yaxis_title="VDOT")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Race predictors
-        current_vdot = int(vdot_df.iloc[-1]["vdot"])
+        # Race predictors — computed from Daniels & Gilbert equations (any VDOT)
+        current_vdot = float(vdot_df.iloc[-1]["vdot"])
         st.divider()
-        st.subheader(f"🎯 Race predictors z VDOT {current_vdot}")
-        # Simplified Jack Daniels VDOT predictions (approximate)
-        predictions = {
-            54: {"5km": "20:39", "10km": "42:51", "HM": "1:34:53", "M": "3:17:29"},
-            55: {"5km": "20:18", "10km": "42:21", "HM": "1:33:43", "M": "3:15:28"},
-            56: {"5km": "19:57", "10km": "41:52", "HM": "1:32:35", "M": "3:13:32"},
-            57: {"5km": "19:36", "10km": "41:24", "HM": "1:31:29", "M": "3:11:39"},
-        }
-        pred = predictions.get(current_vdot, predictions[55])
+        st.subheader(f"🎯 Race predictors z VDOT {current_vdot:g}")
+        distances = {"5km": 5000, "10km": 10000, "HM": 21097.5, "M": 42195}
         cols = st.columns(4)
-        for i, (dist, time) in enumerate(pred.items()):
-            cols[i].metric(dist, time)
+        for i, (label, dist_m) in enumerate(distances.items()):
+            cols[i].metric(label, fmt_time(daniels_race_time(current_vdot, dist_m)))
 
     st.divider()
     st.subheader("📜 Historia")
