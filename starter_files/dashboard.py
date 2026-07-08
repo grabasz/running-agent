@@ -440,7 +440,7 @@ def page_running():
         return
 
     runs_df["date"] = pd.to_datetime(runs_df["date"])
-    runs_df = runs_df.sort_values("date")
+    runs_df = runs_df.sort_values("date", ascending=False)
 
     # Filtry
     types = sorted(runs_df["type"].dropna().unique())
@@ -504,16 +504,28 @@ def page_running():
 
     # Tabela
     st.divider()
-    st.subheader("Ostatnie biegi")
-    display_df = df[["date", "name", "distance_km", "pace_sec_per_km", "hr_avg", "type", "source"]].copy()
+    st.subheader("Ostatnie 10 biegów")
+    cols = ["date", "start_time", "name", "distance_km", "pace_sec_per_km", "hr_avg", "type", "source"]
+    cols = [c for c in cols if c in df.columns]  # start_time gracefully missing pre-migration
+    display_df = df[cols].copy()
     display_df["tempo"] = display_df["pace_sec_per_km"].apply(fmt_pace)
     display_df["dystans"] = display_df["distance_km"].apply(lambda x: f"{x:.2f} km" if pd.notna(x) else "—")
+    show_cols = ["date"] + (["start_time"] if "start_time" in display_df.columns else []) + \
+                ["name", "dystans", "tempo", "hr_avg", "type", "source"]
+    rename_map = {
+        "date": "Data", "start_time": "Godz.", "name": "Nazwa",
+        "hr_avg": "HR śr", "type": "Typ", "source": "Źródło",
+    }
     st.dataframe(
-        display_df[["date", "name", "dystans", "tempo", "hr_avg", "type", "source"]].rename(columns={
-            "date": "Data", "name": "Nazwa", "hr_avg": "HR śr", "type": "Typ", "source": "Źródło"
-        }),
+        display_df[show_cols].head(10).rename(columns=rename_map),
         hide_index=True, use_container_width=True, height=400,
     )
+    if len(display_df) > 10:
+        with st.expander(f"Pokaż wszystkie ({len(display_df)})"):
+            st.dataframe(
+                display_df[show_cols].rename(columns=rename_map),
+                hide_index=True, use_container_width=True,
+            )
 
 
 # ============================================

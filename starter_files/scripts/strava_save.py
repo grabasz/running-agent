@@ -71,9 +71,11 @@ def save_strava_run(
     elapsed_sec = int(details.get("elapsed_time") or 0)
     pace = int(round(moving_sec / dist_km)) if dist_km > 0 else None
 
-    # Date from start_date_local
+    # Date + time-of-day from start_date_local ("YYYY-MM-DDTHH:MM:SSZ" — Z is misleading, it's LOCAL time)
     start_local = details.get("start_date_local", "")
-    date = start_local.split("T")[0] if start_local else ""
+    parts = start_local.split("T", 1) if start_local else []
+    date = parts[0] if parts else ""
+    start_time = parts[1].rstrip("Z") if len(parts) > 1 else None
 
     typ = run_type or _classify_run_type(details)
 
@@ -102,6 +104,7 @@ def save_strava_run(
         api.runs.run_upsert_strava(conn,
             strava_id=sid,
             date=date,
+            start_time=start_time,
             name=details.get("name"),
             distance_km=dist_km,
             duration_sec=elapsed_sec,

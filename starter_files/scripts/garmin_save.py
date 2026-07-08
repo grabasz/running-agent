@@ -67,9 +67,11 @@ def save_run(activity: dict, splits: dict | None = None, run_type: str | None = 
     avg_speed = activity.get("averageSpeed") or 0
     pace = _ms_per_m_to_sec_per_km(avg_speed)
 
-    # ISO date from startTimeLocal
+    # ISO date + time-of-day from startTimeLocal ("YYYY-MM-DD HH:MM:SS")
     start_local = activity.get("startTimeLocal", "")
-    date = start_local.split(" ")[0] if start_local else ""
+    parts = start_local.split(" ", 1) if start_local else []
+    date = parts[0] if parts else ""
+    start_time = parts[1] if len(parts) > 1 else None
 
     typ = run_type or _classify_run_type(activity)
 
@@ -91,6 +93,7 @@ def save_run(activity: dict, splits: dict | None = None, run_type: str | None = 
         run_id = api.runs.run_upsert_garmin(conn,
             garmin_activity_id=aid,
             date=date,
+            start_time=start_time,
             name=activity.get("activityName"),
             distance_km=dist_km,
             duration_sec=elapsed_sec,
