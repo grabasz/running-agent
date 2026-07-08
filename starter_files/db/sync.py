@@ -71,8 +71,53 @@ TABLE_ORDER = [
 ]
 
 
+def _is_stream_error(exc: BaseException) -> bool:
+    msg = str(exc)
+    return "stream not found" in msg or "stream expired" in msg or "STREAM_EXPIRED" in msg
+
+
+def _push_table(local, table: str, mode: str, max_retries: int = 3):
+    """Run DELETE or INSERT for a single table with a fresh Turso connection.
+
+    Each call opens its own libsql connection so a dead Hrana stream from a prior
+    table can't poison the next one. Retries transparently on stream-not-found errors.
+    """
+    for attempt in range(1, max_retries + 1):
+        turso = _turso()
+        try:
+            if mode == "delete":
+                turso.execute(f"DELETE FROM {table}")
+                turso.commit()
+                return 0
+            # mode == "insert"
+            rows = local.execute(f"SELECT * FROM {table}").fetchall()
+            if not rows:
+                return 0
+            cols = rows[0].keys()
+            placeholders = ", ".join("?" for _ in cols)
+            col_list = ", ".join(cols)
+            sql = f"INSERT OR REPLACE INTO {table} ({col_list}) VALUES ({placeholders})"
+            params = [tuple(r[c] for c in cols) for r in rows]
+            turso.executemany(sql, params)
+            turso.commit()
+            return len(rows)
+        except ValueError as e:
+            if _is_stream_error(e) and attempt < max_retries:
+                continue  # fresh connection on next iteration
+            raise
+        finally:
+            try:
+                turso.close()
+            except Exception:
+                pass
+
+
 def push(verbose: bool = True) -> dict:
-    """Push local rows to Turso. Strategy: DELETE in reverse dep order, INSERT in dep order.
+    """Push local rows to Turso. DELETE reverse dep order, INSERT dep order.
+
+    Each table runs on its own connection with executemany + per-table commit,
+    which avoids Hrana stream expiry during long-running syncs (fix for the
+    "stream not found" errors that used to strand run_laps mid-push).
 
     Returns dict {table: rows_pushed} per table.
     """
@@ -81,28 +126,17 @@ def push(verbose: bool = True) -> dict:
 
     local = sqlite3.connect(LOCAL_DB)
     local.row_factory = sqlite3.Row
-    turso = _turso()
 
     out = {}
     try:
-        # 1. Clear remote in reverse order (dependents first)
         for table in reversed(TABLE_ORDER):
-            turso.execute(f"DELETE FROM {table}")
+            _push_table(local, table, "delete")
 
-        # 2. Insert in forward order (parents first)
         for table in TABLE_ORDER:
-            rows = local.execute(f"SELECT * FROM {table}").fetchall()
-            if rows:
-                cols = rows[0].keys()
-                placeholders = ", ".join("?" for _ in cols)
-                col_list = ", ".join(cols)
-                sql = f"INSERT OR REPLACE INTO {table} ({col_list}) VALUES ({placeholders})"
-                for r in rows:
-                    turso.execute(sql, tuple(r[c] for c in cols))
-            out[table] = len(rows)
+            n = _push_table(local, table, "insert")
+            out[table] = n
             if verbose:
-                print(f"  push [{table:20}] {len(rows)} rows")
-        turso.commit()
+                print(f"  push [{table:20}] {n} rows")
     finally:
         local.close()
     return out

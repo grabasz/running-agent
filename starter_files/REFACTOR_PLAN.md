@@ -290,6 +290,40 @@ streamlit run dashboard.py --server.headless true --server.port 8501
 
 ---
 
+## ✅ Faza 9 — Streamlit Cloud deployment (ZROBIONE 30.06.2026)
+
+Dashboard żyje publicznie na Streamlit Cloud z password gate. Mobile dostęp przez "Add to Home Screen" (PWA-like). Workflow daily: skille zapisują lokalnie → `python db/sync.py push` → przycisk "🔄 Odśwież dane" w dashboardzie pulluje fresh z Turso.
+
+
+
+**Strategia: pull-on-start zamiast libsql adapter** — `dashboard.py` w cloud-mode wykrywa `TURSO_DATABASE_URL`, pulluje fresh snapshot z Turso (~1MB, <1s) do `data_replica.db` w `/tmp` przez `api.bootstrap_cloud()`, potem reszta kodu czyta z replicy jak z lokalnej sqlite. Powód: libsql nie obsługuje `sqlite3.Row` (zwraca tuple) → próba przepisania `api.py` na libsql wymagałaby patchowania każdego `dict(r)` w dashboardzie i helperach (`recent_with_dynamics` etc.). Pull-on-start = 0 zmian w queries/aiosql/`dict(r)`.
+
+**Zmiany w kodzie (zrobione):**
+- `db/init_db.py` — `DB_PATH` honoruje `RUNNING_DB_PATH` env (override dla cloud)
+- `db/api.py` — nowa funkcja `bootstrap_cloud(force=False)`: idempotent w obrębie procesu, materializuje schemat + pulluje wszystkie tabele
+- `dashboard.py` — bridge `st.secrets → os.environ` (Streamlit Cloud secrets → Python env), `_bootstrap_once()` w `@st.cache_resource`, sidebar pokazuje tryb (☁️ cloud / 💾 local), refresh force-pulluje
+- `dashboard.py` — **password gate** (`st.secrets["APP_PASSWORD"]`); brak hasła w secrets = open access (lokalny dev), z hasłem = gate przed renderem
+- `requirements.txt` (nowy, root) — `streamlit pandas plotly aiosql libsql python-dotenv`
+- `.streamlit/config.toml` (nowy) — dark theme + headless
+- `.streamlit/secrets.toml.example` (nowy) — template
+- `DEPLOYMENT.md` (nowy) — instrukcja krok-po-kroku
+- `.gitignore` — zawężone `.streamlit/secrets.toml` (zamiast całego katalogu, żeby `config.toml` + `.example` weszły do repo)
+
+**Smoke test (zielony):**
+- local sqlite: `bootstrap_cloud()` zwraca `None`, queries działają na `db/data.db`
+- cloud mode (env z `db/.env`): pull z Turso, `runs=7 gym=2 planned=7`, drugi call idempotent
+- `streamlit run dashboard.py` → HTTP 200 lokalnie, password gate skipowany bez `APP_PASSWORD`
+
+**Do zrobienia po stronie usera (manualnie):**
+1. Skopiuj zmienione/nowe pliki do `D:\git\running-agent\running-agent\starter_files\`:
+   - mod: `db/init_db.py`, `db/api.py`, `dashboard.py`
+   - nowe: `requirements.txt`, `.streamlit/config.toml`, `.streamlit/secrets.toml.example`, `DEPLOYMENT.md`
+2. Commit + push na `main`
+3. Streamlit Cloud (`https://share.streamlit.io`): New app → wskaż `starter_files/dashboard.py` → Secrets → wklej `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `APP_PASSWORD` → Deploy
+4. PWA na telefonie: otwórz URL → Add to Home Screen
+
+---
+
 ## 🎯 Stan refaktoru — **WSZYSTKIE GŁÓWNE FAZY ZAMKNIĘTE** ✅
 
 ```
@@ -304,15 +338,102 @@ streamlit run dashboard.py --server.headless true --server.port 8501
 ✅ Faza 6   CLAUDE.md + skille
 ✅ Faza 7   Cleanup
 ✅ Faza 8   Planned workouts w DB
+✅ Faza 9   Streamlit Cloud deploy + password gate (PWA na telefonie)
 ```
+
+## 🎯 Kolejny krok — Faza 10: Generator workoutów ze strony (Poziom A)
+
+**Cel:** dodać do dashboardu 5. stronę "💪 Generator workoutów" — formularz, który użytkownik wypełnia na telefonie i ściąga gotowy JSON do importu w Garmin Connect mobile/web. ~2h pracy.
+
+**MVP scope (Poziom A — form → JSON download):**
+- Selectbox typu workoutu: Easy / Tempo / Interval / Long / Repetition / Strength
+- Inputy zależne od typu (dystans, intensywność, struktura interwałów, lista ćwiczeń siłowych)
+- Validation: dla siłowych — kategoria + exerciseName z `templates/Exercises.json` (NIE zgaduj nazw — patrz memory `feedback_garmin_exercise_names.md`)
+- Pod spodem `garmin_gen.py` lub nowy generator składający JSON z templates'ów
+- Output: `st.download_button("Pobierz JSON", data=json_str, file_name=f"{typ}_{date}.json")`
+- Workflow user: na telefonie wypełnia → pobiera JSON do Files (iOS) / Downloads (Android) → otwiera Garmin Connect app → Import workout
+
+**Out of scope (Poziom B, na później):**
+- Auto-push do konta Garmin przez API (wymaga auth, session refresh, secrets)
+- AI-powered generator z opisu naturalnego (wymaga Claude API key)
+
+**Trade-off accepted:** ręczny krok importu w Garmin Connect (30s) vs. ~6h dodatkowej pracy na Poziom B i utrzymanie sesji.
+
+**Dependencies:** brak — wszystko już w repo (`garmin_gen.py`, `Exercises.json`).
+
+---
+
+## 🎯 Faza 11 — Running-agent MCP (Claude Desktop parity)
+
+**Cel:** Claude Desktop (Mati, telefon/laptop bez Claude Code) ma dziś MCP parity dla *odczytu* (garmin/strava/weather/filesystem/memory), ale **nie może wykonywać Pythona** → brak zapisu do DB, brak regen logów, brak Turso sync. Skille `/run`, `/silownia`, `/dzis` w Desktop działają tylko "na sucho".
+
+**Rozwiązanie:** własny cienki MCP server (**FastMCP**, ~200 linii, `db/mcp_server.py`) wrapujący istniejące `db/api.py` + `scripts/*_save.py`. Zero nowej logiki biznesowej — tylko ekspozycja istniejących funkcji jako MCP tools.
+
+**Zestaw tools (MVP):**
+| Tool | Wrapuje | Po co |
+|------|---------|-------|
+| `save-run` | `garmin_save.save_run()` / `strava_save.save_strava_run()` | `/run` z Desktopu zapisuje do DB |
+| `save-gym-session` | `silownia_save.save_strength()` + regen gym_log | `/silownia` z Desktopu |
+| `get-today-plan` | `api.planned.today()` + `upcoming()` | `/dzis` bez czytania markdownów |
+| `mark-workout-status` | `api.planned.mark_status()` | odhaczanie planu |
+| `log-body-state` | `api.body.state_log()` | subiektywne odczucia → DB |
+| `weekly-volume` | `api.weekly_volume.recent()` | pytania historyczne bez Stravy |
+| `turso-push` | `db/sync.py push` | backup po write |
+
+**Konfiguracja:** wpis w `claude_desktop_config.json` (install.ps1 Step 6 już przygotowany na dopisanie): `python db/mcp_server.py` przez stdio. Wymaga `pip install fastmcp` w requirements.
+
+**Uwaga vs anty-cele:** to NIE jest MCP dla Garmina (etweisberg zostaje) — to MCP dla **własnej bazy projektu**, jedyna brakująca zdolność Desktopu.
+
+**Relacja do Fazy 10:** częściowo ją zastępuje — jeśli Desktop może wywołać `create-workout` (garmin MCP) + zapis do DB (ten MCP), generator na dashboardzie traci priorytet dla Bartka; zostaje wartościowy dla userów mobile-only (form → JSON download bez Claude).
+
+**Estymacja:** ~2-3h (server + test w Desktop + wpis do install.ps1 + README).
+
+---
+
 
 **Pozostałe opcje (nice-to-have):**
 - **Faza 8.5** — skill `/tydzien` (auto-generator tygodniowego planu z `plan_current.md` + body_state + pogoda) — ~1h
-- **Faza 9** — Streamlit Cloud deployment (mobile dostęp via URL) — wymaga refactor `db/api.py` żeby był provider-agnostic (sqlite3 lokalnie / libsql w cloud) — ~2h
-- **Faza 10** — Telegram bot (mobile native, push notifications) — ~3h
-- **Faza 11** — Multi-user (gdy będziesz miał Mati/Jurek/Pychowice RC jako współ-userów) — ~4h
+- **Faza 10** — Generator workoutów ze strony (Poziom A: form → JSON download) — ~2h
+- **Faza 11** — Running-agent MCP dla Claude Desktop (sekcja wyżej) — ~2-3h
+- **Faza 12** — Telegram bot (mobile native, push notifications) — ~3h
+- **Faza 13** — Multi-user (gdy będziesz miał Mati/Jurek/Pychowice RC jako współ-userów) — ~4h
+- **Faza 14** — Garmin auth: garth zamiast Playwright (sekcja niżej) — ~4-6h
 
 Wszystkie niezależne. Codzienna rutyna projektu jest w pełni działająca.
+
+---
+
+## 🎯 Faza 14 — Garmin auth: garth zamiast Playwright
+
+**Cel:** wyeliminować zależność od przeglądarki (Playwright) w loginie do Garmina. Obecnie `mcp__garmin__garmin-login` odpala izolowany Chromium → user wpisuje hasło ręcznie → cookies eksportowane do `~/.garmin-connect-mcp/session.json`. Sesja pada po kilku godzinach → cały flow od nowa.
+
+**Rozwiązanie:** natywny OAuth login przez bibliotekę **`garth`** (Python) — programmatic username/password → OAuth1 + OAuth2 tokens → refresh token żyje **tygodniami**, zero browsera.
+
+**Root cause obecnego bólu:**
+- `etweisberg/garmin-connect-mcp` używa Playwright do obejścia Cloudflare TLS fingerprinting (decyzja z 29.06.2026)
+- Query-endpointy już działają jako plain HTTP (używają wyciągniętych cookies) — auth to jedyny puzzle wymagający browsera
+- Faktycznie: `garth` też radzi sobie z Cloudflare (używa `curl_cffi` pod maską, TLS impersonation Chrome)
+
+**Zakres pracy:**
+1. **Fork `etweisberg/garmin-connect-mcp`** (lub kontrybucja upstream jeśli maintainer zechce)
+2. **Patch `src/lib/garmin-auth.ts`** — zamiast Playwright wywołuje shell subprocess do Python skryptu z `garth`
+3. **`scripts/garmin_login.py`** — nowy, korzysta z `garth.Client()`, przyjmuje `--email` / `--password` (lub prompts interaktywnie), zapisuje session do tego samego pliku `~/.garmin-connect-mcp/session.json` w formacie kompatybilnym z resztą MCP
+4. **`scripts/garmin_refresh.py`** — check-session sprawdza expiry i wywołuje refresh gdy potrzeba (garth to obsługuje)
+5. **CLAUDE.md update** — sekcja "Garmin session expire" opisuje nowy flow: pierwszy raz login, potem tygodnie ciszy
+
+**Trade-offs:**
+- ✅ Zero interakcji browserem, sesja tygodniowa
+- ✅ Można trzymać hasło w `~/.garmin-connect-mcp/.env` (gitignored) — lub prompt raz przy setup
+- ❌ **2FA/MFA edge case**: gdy Garmin wymusi 2FA (nowe urządzenie, nietypowe IP), garth potrzebuje interactive prompt na OTP. W praktyce rzadkie (~1× / 3 miesiące)
+- ❌ Node MCP musi umieć spawnować Python (Node → subprocess → Python) — dodatkowa ruchoma część vs. natywnie Node
+
+**Dependencies:** `pip install garth` (~200KB, MIT).
+
+**Estymacja:** ~4-6h (fork + patch + Python scripts + test + PR/dokumentacja).
+
+**Relacja do Fazy 11:** Faza 11 (running-agent MCP) używa istniejącego Garmin MCP jako read-only backend. Faza 14 wymienia auth pod spodem — Faza 11 działa niezależnie, ale skorzysta z niezawodniejszej sesji.
+
+---
 
 ---
 
@@ -345,6 +466,11 @@ Wszystkie niezależne. Codzienna rutyna projektu jest w pełni działająca.
 | 29.06.2026 | `gym_log.md` jako auto-generated rendered view (Wzorzec ciężarów = top 90 dni z DB) | Bartek pyta o "aktualny stan" — agregat z bazy jest źródłem prawdy |
 | 29.06.2026 | "📋 Skróty zachowań" w CLAUDE.md jako tabela `user pyta → action` | Czytelniejsze niż dotychczasowe bullety, każdy use-case ma skill |
 | 29.06.2026 | Body state auto-log po /run i /silownia gdy user wspomina subiektywne | Buduje historię trendów (np. "kolano boli częściej po rowerze niż po biegu") |
+| 30.06.2026 | Streamlit Cloud: pull-on-start zamiast libsql adapter | libsql nie obsługuje sqlite3.Row → adapter wymagałby patchowania każdego `dict(r)` w dashboard + helperach; pull ~1MB <1s, zerowy refactor queries |
+| 30.06.2026 | Password gate przez `st.secrets["APP_PASSWORD"]` (nie OAuth) | MVP — 10 linii kodu, brak setupu Google/GitHub login; gdy będzie multi-user (Faza 12), przejdziemy na proper auth |
+| 30.06.2026 | Generator workoutów: Poziom A (form → JSON download) zamiast Poziom B (auto-push do Garmin) | A: 2h pracy, zero auth; B: 6h + utrzymanie sesji/cookies. Ręczny import w Garmin Connect mobile = 30s. Migrujemy do B gdy A się sprawdzi codziennie |
+| 06.07.2026 | Faza 11: własny running-agent MCP (FastMCP wrapping db/api.py) dla Claude Desktop | Desktop ma MCP parity dla odczytu, ale nie wykonuje Pythona → bez tego brak zapisu do DB / Turso sync. ~200 linii, zero nowej logiki. Nie łamie anty-celu "nie piszemy MCP dla Garmina" — to MCP dla własnej bazy |
+| 08.07.2026 | Faza 14: `garth` zamiast Playwright do Garmin auth | Playwright login = izolowany Chromium, hasło ręcznie, sesja pada po godzinach. `garth` robi natywny OAuth (curl_cffi bije Cloudflare), refresh token żyje tygodniami, zero browsera. 2FA edge case akceptowalny (~1×/3mc). Fork etweisberg-mcp lub PR upstream. |
 
 ---
 
