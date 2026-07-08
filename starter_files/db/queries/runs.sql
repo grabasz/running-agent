@@ -6,15 +6,16 @@
 -- Upsert run from Strava (key: strava_id). Pace computed in api.py before call.
 -- Garmin-only columns (running dynamics, training_effect etc) left NULL.
 INSERT INTO runs
-    (strava_id, source, date, name, distance_km, duration_sec, moving_sec, pace_sec_per_km,
+    (strava_id, source, date, start_time, name, distance_km, duration_sec, moving_sec, pace_sec_per_km,
      hr_avg, hr_max, elevation_gain_m, elevation_loss_m, cadence_avg, power_avg,
      type, notes, raw_json)
 VALUES
-    (:strava_id, 'strava', :date, :name, :distance_km, :duration_sec, :moving_sec, :pace_sec_per_km,
+    (:strava_id, 'strava', :date, :start_time, :name, :distance_km, :duration_sec, :moving_sec, :pace_sec_per_km,
      :hr_avg, :hr_max, :elevation_gain_m, :elevation_loss_m, :cadence_avg, :power_avg,
      :type, :notes, :raw_json)
 ON CONFLICT(strava_id) DO UPDATE SET
     date = excluded.date,
+    start_time = excluded.start_time,
     name = excluded.name,
     distance_km = excluded.distance_km,
     duration_sec = excluded.duration_sec,
@@ -34,7 +35,7 @@ ON CONFLICT(strava_id) DO UPDATE SET
 -- name: run_upsert_garmin<!
 -- Upsert run from Garmin Connect (key: garmin_activity_id). Full column set — running dynamics, TE, body battery.
 INSERT INTO runs
-    (garmin_activity_id, source, date, name, distance_km, duration_sec, moving_sec, pace_sec_per_km,
+    (garmin_activity_id, source, date, start_time, name, distance_km, duration_sec, moving_sec, pace_sec_per_km,
      hr_avg, hr_max, cadence_avg, power_avg, power_max, power_norm,
      elevation_gain_m, elevation_loss_m,
      vertical_oscillation_cm, ground_contact_ms, gct_balance_left_pct, stride_length_cm, vertical_ratio_pct,
@@ -43,7 +44,7 @@ INSERT INTO runs
      hr_time_z1_sec, hr_time_z2_sec, hr_time_z3_sec, hr_time_z4_sec, hr_time_z5_sec,
      type, notes, raw_json)
 VALUES
-    (:garmin_activity_id, 'garmin', :date, :name, :distance_km, :duration_sec, :moving_sec, :pace_sec_per_km,
+    (:garmin_activity_id, 'garmin', :date, :start_time, :name, :distance_km, :duration_sec, :moving_sec, :pace_sec_per_km,
      :hr_avg, :hr_max, :cadence_avg, :power_avg, :power_max, :power_norm,
      :elevation_gain_m, :elevation_loss_m,
      :vertical_oscillation_cm, :ground_contact_ms, :gct_balance_left_pct, :stride_length_cm, :vertical_ratio_pct,
@@ -53,6 +54,7 @@ VALUES
      :type, :notes, :raw_json)
 ON CONFLICT(garmin_activity_id) DO UPDATE SET
     date = excluded.date,
+    start_time = excluded.start_time,
     name = excluded.name,
     distance_km = excluded.distance_km,
     duration_sec = excluded.duration_sec,
@@ -131,7 +133,7 @@ SELECT *
 
 -- name: recent_with_dynamics
 -- Runs with running dynamics (Garmin only) from last N days
-SELECT date, name, distance_km, pace_sec_per_km, hr_avg,
+SELECT date, name, distance_km, pace_sec_per_km, hr_avg, cadence_avg,
        ground_contact_ms, gct_balance_left_pct,
        vertical_oscillation_cm, stride_length_cm, vertical_ratio_pct,
        training_effect_aerobic

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
     -- Basics
     date                        TEXT NOT NULL,         -- YYYY-MM-DD
+    start_time                  TEXT,                  -- HH:MM:SS (local time from provider)
     name                        TEXT,
     distance_km                 REAL,
     duration_sec                INTEGER,               -- elapsed
