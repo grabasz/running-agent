@@ -112,14 +112,41 @@ def _push_table(local, table: str, mode: str, max_retries: int = 3):
                 pass
 
 
-def push(verbose: bool = True) -> dict:
+PRESET_AFTER = {
+    # Skille pass `--after=run` etc. to push only the touched tables (+FK deps).
+    # Order matters: subset preserves TABLE_ORDER; DELETE reverse, INSERT forward.
+    "run":     ["runs", "run_laps", "planned_workouts", "planned_workout_components"],
+    "gym":     ["gym_sessions", "gym_sets", "planned_workouts", "planned_workout_components"],
+    "planned": ["planned_workouts", "planned_workout_components"],
+    "volume":  ["weekly_volume"],
+    "body":    ["body_state"],
+    "vdot":    ["vdot_history", "races"],
+}
+
+
+def _local_row_count(local, table: str) -> int:
+    try:
+        return local.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    except sqlite3.OperationalError:
+        return 0  # table missing
+
+
+def push(verbose: bool = True, tables: list[str] | None = None,
+         skip_empty: bool = True) -> dict:
     """Push local rows to Turso. DELETE reverse dep order, INSERT dep order.
 
     Each table runs on its own connection with executemany + per-table commit,
     which avoids Hrana stream expiry during long-running syncs (fix for the
     "stream not found" errors that used to strand run_laps mid-push).
 
-    Returns dict {table: rows_pushed} per table.
+    Args:
+        verbose: print per-table row counts
+        tables: restrict push to these tables only (must be subset of TABLE_ORDER).
+                None = push all (backward compatible).
+        skip_empty: skip DELETE+INSERT for tables that are empty locally
+                    (they're already empty upstream after previous pushes).
+
+    Returns dict {table: rows_pushed} per table (skipped tables absent).
     """
     if not LOCAL_DB.exists():
         raise RuntimeError(f"Local DB not found at {LOCAL_DB}")
@@ -127,12 +154,26 @@ def push(verbose: bool = True) -> dict:
     local = sqlite3.connect(LOCAL_DB)
     local.row_factory = sqlite3.Row
 
+    if tables:
+        # Filter to intersect + preserve TABLE_ORDER
+        selected = [t for t in TABLE_ORDER if t in tables]
+        unknown = set(tables) - set(TABLE_ORDER)
+        if unknown:
+            raise ValueError(f"Unknown tables: {sorted(unknown)}")
+    else:
+        selected = TABLE_ORDER
+
+    if skip_empty:
+        selected = [t for t in selected if _local_row_count(local, t) > 0]
+        if not selected and verbose:
+            print("  (nothing to push — all selected tables empty locally)")
+
     out = {}
     try:
-        for table in reversed(TABLE_ORDER):
+        for table in reversed(selected):
             _push_table(local, table, "delete")
 
-        for table in TABLE_ORDER:
+        for table in selected:
             n = _push_table(local, table, "insert")
             out[table] = n
             if verbose:
@@ -142,32 +183,68 @@ def push(verbose: bool = True) -> dict:
     return out
 
 
-def pull(verbose: bool = True) -> dict:
-    """Pull all rows from Turso to local. Overwrites local data.
+def _pull_table(local, table: str, max_retries: int = 3):
+    """Pull rows for one table with a fresh Turso connection + retry on stream expiry.
 
-    Use on a fresh machine or to revert local changes.
+    Fresh connection per table avoids the Hrana stream from the previous
+    table (or a stale replica after long inactivity) poisoning the next one.
+    Single SELECT per table — description + rows off the same cursor.
     """
-    turso = _turso()
-    local = sqlite3.connect(LOCAL_DB)
-
-    out = {}
-    try:
-        tables = _user_tables(turso)
-        for table in tables:
-            rows = turso.execute(f"SELECT * FROM {table}").fetchall()
-            # Need column names — libsql cursor.description has them
+    for attempt in range(1, max_retries + 1):
+        turso = _turso()
+        try:
             cur = turso.execute(f"SELECT * FROM {table}")
-            cur.fetchone()
+            rows = cur.fetchall()
             cols = [d[0] for d in cur.description]
+
             local.execute(f"DELETE FROM {table}")
             if rows:
                 placeholders = ", ".join("?" for _ in cols)
                 col_list = ", ".join(cols)
                 sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
                 local.executemany(sql, rows)
-            out[table] = len(rows)
+            return len(rows)
+        except ValueError as e:
+            if _is_stream_error(e) and attempt < max_retries:
+                continue  # fresh connection on next iteration
+            raise
+        finally:
+            try:
+                turso.close()
+            except Exception:
+                pass
+
+
+def pull(verbose: bool = True) -> dict:
+    """Pull all rows from Turso to local. Overwrites local data.
+
+    Use on a fresh machine or to revert local changes. Per-table fresh
+    connection + retry on Hrana stream expiry (same fix as push).
+    """
+    # Table list requires one connection — retried on stream errors.
+    for attempt in range(1, 4):
+        turso = _turso()
+        try:
+            tables = _user_tables(turso)
+            break
+        except ValueError as e:
+            if _is_stream_error(e) and attempt < 3:
+                continue
+            raise
+        finally:
+            try:
+                turso.close()
+            except Exception:
+                pass
+
+    local = sqlite3.connect(LOCAL_DB)
+    out = {}
+    try:
+        for table in tables:
+            n = _pull_table(local, table)
+            out[table] = n
             if verbose:
-                print(f"  pull [{table:20}] {len(rows)} rows")
+                print(f"  pull [{table:20}] {n} rows")
         local.commit()
     finally:
         local.close()
@@ -200,14 +277,35 @@ def status() -> None:
 
 
 if __name__ == "__main__":
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
-    if cmd == "push":
-        push()
-    elif cmd == "pull":
-        pull()
-    elif cmd == "status":
-        status()
-    else:
-        print(f"Unknown command: {cmd}", file=sys.stderr)
-        print("Usage: python db/sync.py [push|pull|status]", file=sys.stderr)
-        sys.exit(1)
+    import argparse
+    try:
+        from .perf import log_run  # package-relative when imported
+    except ImportError:
+        sys.path.insert(0, str(HERE))
+        from perf import log_run  # type: ignore
+
+    parser = argparse.ArgumentParser(prog="db.sync")
+    parser.add_argument("cmd", choices=["push", "pull", "status"])
+    parser.add_argument("--after", choices=list(PRESET_AFTER.keys()),
+                        help="Push only tables touched by this skill (e.g. run, gym, planned).")
+    parser.add_argument("--tables", help="Comma-separated table names to push.")
+    parser.add_argument("--no-skip-empty", action="store_true",
+                        help="Push empty tables too (default: skip).")
+    args = parser.parse_args()
+
+    perf_args = {"after": args.after, "tables": args.tables,
+                 "no_skip_empty": args.no_skip_empty}
+    perf_args = {k: v for k, v in perf_args.items() if v}
+
+    with log_run(f"db.sync {args.cmd}", args=perf_args):
+        if args.cmd == "push":
+            tables = None
+            if args.after:
+                tables = PRESET_AFTER[args.after]
+            elif args.tables:
+                tables = [t.strip() for t in args.tables.split(",") if t.strip()]
+            push(tables=tables, skip_empty=not args.no_skip_empty)
+        elif args.cmd == "pull":
+            pull()
+        elif args.cmd == "status":
+            status()
