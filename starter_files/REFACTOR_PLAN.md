@@ -391,15 +391,160 @@ Dashboard żyje publicznie na Streamlit Cloud z password gate. Mobile dostęp pr
 ---
 
 
+**Zaktualizowana kolejność (13.07.2026 po fix crash dashboard + task/notes decyzje):**
+
+1. **Faza 17** — Task/Goal/Notes system + strona 'Rozkminy' — ~4h ⭐⭐⭐
+2. **Faza 12 MVP** — Telegram bot (read-only + notes/tasks/log) — ~3-4h ⭐⭐
+3. **Faza 14** — Garth auth migration — ~4-6h ⭐ (niezależny value: 2-tyg session)
+4. **Faza 12.5** — Bot: `/workout upload` (auto-push do Garmina) — ~1h (po Fazie 14)
+5. **Faza 11** — Running-agent MCP dla Claude Desktop/mobile — ~2-3h (opcjonalne)
+6. **Faza 15/16/13/10/8.5** — nice-to-have niezależne
+
 **Pozostałe opcje (nice-to-have):**
 - **Faza 8.5** — skill `/tydzien` (auto-generator tygodniowego planu z `plan_current.md` + body_state + pogoda) — ~1h
-- **Faza 10** — Generator workoutów ze strony (Poziom A: form → JSON download) — ~2h
-- **Faza 11** — Running-agent MCP dla Claude Desktop (sekcja wyżej) — ~2-3h
-- **Faza 12** — Telegram bot (mobile native, push notifications) — ~3h
+- **Faza 10** — Generator workoutów ze strony (Poziom A: form → JSON download) — ~2h (częściowo zastąpione przez `/workout-json` w Fazie 12)
 - **Faza 13** — Multi-user (gdy będziesz miał Mati/Jurek/Pychowice RC jako współ-userów) — ~4h
-- **Faza 14** — Garmin auth: garth zamiast Playwright (sekcja niżej) — ~4-6h
+- **Faza 15** — Pogoda (`temperature_c` / `humidity_pct` / `wind_kmh`) w `runs` + backfill z Open-Meteo (sekcja niżej) — ~3-4h
+- **Faza 16** — Body Battery + Training Readiness w `runs` (kontekst świeżości przed biegiem) — ~2-3h
 
 Wszystkie niezależne. Codzienna rutyna projektu jest w pełni działająca.
+
+---
+
+## 🎯 Faza 12 — Telegram bot (mobile native)
+
+**Cel:** dać Bartkowi dostęp do systemu z telefonu bez potrzeby otwierania Claude Code / dashboardu. Push notyfikacja rano z `/today`, quick body logging w chwili zdarzenia, notatki/taski w każdej chwili. **Decyzja architektoniczna 13.07.2026:** bot pisze BEZPOŚREDNIO do Turso (libsql client), NIE ma lokalnego SQLite — stateless deploy.
+
+**Decyzja UX 13.07.2026:** bez auto-push komentarza po biegu — tylko `/lastrun` on-demand. To upraszcza deploy (bot bez crona, bez Garmin auth po stronie serwera).
+
+**Hosting:** Fly.io free tier (256MB RAM) lub Railway. Alternatywa: Raspberry Pi w domu jeśli chcesz self-host.
+
+**Auth:** Telegram Bot API token + whitelist Twojego user_id w env vars serwera. Zero OAuth.
+
+**Zakres MVP (~3-4h):**
+
+Struktura: `bot/bot.py` (main), `bot/handlers/*.py` (per komenda), `bot/config.py` (env), `bot/db.py` (thin wrapper na `db/api.py` z libsql zamiast sqlite).
+
+**Komendy read-only (bez zależności):**
+| Komenda | Co robi | Wywołuje |
+|---------|---------|----------|
+| `/today` | Dzisiejszy plan | `api.planned.today()` |
+| `/tomorrow` | Jutrzejszy plan | `api.planned.upcoming(days='+1 days')` |
+| `/week` | Cały tydzień z statusami | `api.planned.current_week()` |
+| `/lastrun` | Analiza ostatniego biegu (pace, HR, GCT, kadencja, coach comment) | `api.runs.recent(limit=1)` + reuse logic z `/run` skill |
+| `/lastgym` | Ostatnia siłownia | `api.gym.sessions_recent(limit=1)` |
+
+**Komendy write (wymaga Fazy 17 dla notes/tasks):**
+| Komenda | Co robi | Wywołuje |
+|---------|---------|----------|
+| `/log kolano 2 [notatka]` | body_state pain=2 | `api.body.state_log()` |
+| `/n insight/decision/idea X` | Nowa notatka | `api.notes.add()` (Faza 17) |
+| `/n reminder X` | Nowy task (bo reminder = todo) | `api.tasks.add()` (Faza 17) |
+| `/tasks` | Pokaż todo tasks | `api.tasks.list(status='todo')` (Faza 17) |
+| `/goals` | Cel tygodnia + status | `api.goals.current_week()` (Faza 17) |
+| `/goal sport zbudować kadencję 172` | Ustaw goal | `api.goals.add()` (Faza 17) |
+
+**Komenda workout:**
+| Komenda | Co robi | Wymaga |
+|---------|---------|--------|
+| `/workout silownia_a` | Generuj JSON + wyślij plik | – |
+| `/workout silownia_a upload` | Generuj + wgraj do Garmina + zaplanuj | **Faza 14** (garth) |
+
+**Push notyfikacje:**
+- **Auto rano 7:00** — codzienny `/today` (cron w bocie, systemd timer albo Fly.io scheduled job)
+- **Custom** — na żądanie w kolejnych rozszerzeniach
+
+**Smart chat (regex-based, bez LLM):**
+Bot rozpoznaje wzorce naturalne bez LLM:
+- `kolano 2/10 klika przy schodach` → body_state z parsingiem
+- `przypomnij mi jutro X` → task z due_date=tomorrow
+- `dziś: X` → notatka category=insight
+Odpowiada `[tak/nie]` przed zapisem.
+
+**Estymacja:** ~3-4h (bot + 15 komend + Fly.io deploy + Telegram Bot API setup).
+
+**Powiązania z innymi fazami:**
+- **Wymaga Fazy 17** dla notes/tasks/goals komend
+- **Nie wymaga Fazy 14** (bo bez auto push komentarza, bez auto upload do Garmina)
+- **Faza 12.5** (auto upload workout) dopiero po Fazie 14 — trywialne dodanie 1 komendy
+
+---
+
+---
+
+## 🎯 Faza 17 — Task/Goal/Notes system + strona 'Rozkminy'
+
+**Cel:** Bartek 13.07.2026: *"życie i trening to jedno, a jednak potrzebuję takich rozkmin — trzeba dodać coś takiego"*. Dashboard obecnie pokrywa **tylko sport**. Bartek jest bezrobotny (długotrwale) + ma aktywne rekrutacje + narzuca sobie sam porządek dnia → potrzebuje integracji z życiową częścią (weekly goals, taski hierarchiczne, notatki z rozmów).
+
+**Decyzja architektoniczna (13.07.2026):** **niezależny system w naszej DB**, NIE integracja z Microsoft TODO. Powód: MS Graph OAuth per-user, bidirectional sync = konflikty, brak kontekstu do reszty DB (body_state/runs/planned). Kompromis: możliwy jednokierunkowy export DB → MS TODO w Fazie 17.5, jeśli zajdzie potrzeba.
+
+**Schema (3 nowe tabele):**
+
+```sql
+-- Zadania z hierarchią (task bez parent_id = "projekt")
+CREATE TABLE tasks (
+    id INTEGER PRIMARY KEY,
+    parent_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,                -- SPECIFIC
+    description TEXT,                    -- kontekst, opis "jak"
+    success_criteria TEXT,               -- MEASURABLE (jak poznam że skończone)
+    category TEXT NOT NULL,              -- 'sport' | 'praca' | 'dom' | 'relacje' | 'zdrowie' | 'inne'
+    status TEXT DEFAULT 'todo',          -- 'todo' | 'in_progress' | 'done' | 'cancelled' | 'blocked'
+    priority INTEGER DEFAULT 3,          -- 1 (must) - 5 (whatever)
+    due_date DATE,                       -- TIME-BOUND (null = anytime)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME,
+    notes TEXT
+);
+
+-- Cel tygodnia (jeden per kategoria per tydzień)
+CREATE TABLE weekly_goals (
+    id INTEGER PRIMARY KEY,
+    week_start DATE NOT NULL,            -- Monday
+    category TEXT NOT NULL,              -- 'sport' | 'praca' | 'dom' | 'relacje' | 'zdrowie'
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'planned',       -- 'planned' | 'done' | 'partial' | 'missed'
+    outcome_notes TEXT,                  -- wypełniane w /weekly-review
+    UNIQUE(week_start, category)
+);
+
+-- Notatki "ważne z rozmów" (Claude sam wrzuca via skille)
+CREATE TABLE notes (
+    id INTEGER PRIMARY KEY,
+    date DATE DEFAULT (date('now')),
+    category TEXT,                       -- 'insight' | 'decision' | 'reminder' | 'idea'
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    tags TEXT,                           -- CSV, wyszukiwalne
+    source TEXT,                         -- 'claude:/run' | 'user' | 'claude:/plan-week'
+    read INTEGER DEFAULT 0
+);
+```
+
+**Task bez `parent_id` = projekt.** Filtr `parent_id IS NULL` zwraca projekty top-level.
+
+**Zakres pracy (Faza 17):**
+1. Schema migration w `db/init_db.py` + `db/migrate.py`
+2. Queries w `db/queries/tasks.sql`, `goals.sql`, `notes.sql` (aiosql)
+3. API w `db/api.py`: `api.tasks.add/list/update/delete`, `api.goals.*`, `api.notes.*`
+4. Nowa strona Streamlit `page_life()` — hierarchiczny widok tasków, weekly goals na górze, notatki tygodnia
+5. CRUD z UI: dodaj/edytuj/usuń task, zmień status, dodaj sub-task
+6. Integracja z `/weekly-review` skill: pokaż co się udało/nie z zeszłego tygodnia
+7. CLAUDE.md sekcja "kiedy Claude automatycznie dodaje do notes/tasks":
+   - **insight** — obserwacja o ciele/technice/planie (np. "prehab W1 aktywacja OK")
+   - **decision** — decyzja o zmianie planu (np. "RDL 50→40 kg zbyt zachowawcze, wracamy")
+   - **reminder** — coś do zrobienia (→ tasks)
+   - **idea** — pomysł na przyszłość (→ notes)
+8. Turso migration + push preset `--after=life`
+
+**Powiązane memory:**
+- `project-dashboard-life-notes` (priorytet WYSOKI)
+- `project-dashboard-plan-granulacja` (granulacja tabeli planu)
+
+**Estymacja:** ~4h (schema+API 1h, UI 2h, integracja z skill+CLAUDE.md 1h).
+
+**Relacja do Fazy 12 (Telegram bot):** bot zyskuje komendy `/task X` (add), `/notatka Y` (add), `/goals` (show weekly). Bez Fazy 17 bot nie ma sensu w kontekście życiowym.
 
 ---
 
@@ -432,6 +577,101 @@ Wszystkie niezależne. Codzienna rutyna projektu jest w pełni działająca.
 **Estymacja:** ~4-6h (fork + patch + Python scripts + test + PR/dokumentacja).
 
 **Relacja do Fazy 11:** Faza 11 (running-agent MCP) używa istniejącego Garmin MCP jako read-only backend. Faza 14 wymienia auth pod spodem — Faza 11 działa niezależnie, ale skorzysta z niezawodniejszej sesji.
+
+---
+
+## 🎯 Faza 15 — Pogoda w runs + backfill
+
+**Cel:** dodać warunki pogodowe do rekordów biegowych żeby wykresy HR-vs-pace przestały mieszać "regres formy" z "gorący dzień". Bez pogody: bieg 5:44/km z HR 130 (11.06, chłodno) vs 5:43/km z HR 141 (08.07, upał) wygląda jak fitness regression — z pogodą widać, że różnica to +11 bpm z powodu +10°C, a forma stoi.
+
+**Nowe kolumny w `runs`:**
+- `temperature_c REAL` — średnia temperatura biegu
+- `humidity_pct INTEGER` — średnia wilgotność
+- `wind_kmh REAL` — średnia prędkość wiatru
+- `weather_source TEXT` — `'garmin'` | `'strava'` | `'openmeteo'` (żeby wiedzieć jak wiarygodne)
+
+**Źródła danych (priority):**
+1. **Garmin** — `mcp__garmin__get-activity-weather` (per activity) → daje `temp`, `humidity`, `wind` dla biegów Garmin. Wywołanie tylko dla `source='garmin'` biegów.
+2. **Strava** — `average_temp` w `details` (gdy zegarek ma czujnik). Historycznie prawdopodobnie puste; można olać.
+3. **Open-Meteo `weather_archive`** (fallback dla wszystkich) — jeśli mamy `start_lat`/`start_lng` + `start_time`, fetch pogody historycznej z archiwum. Dokładny (~1h resolution).
+
+**Zakres pracy:**
+1. **Schema** — `ALTER TABLE runs ADD COLUMN temperature_c REAL / humidity_pct INTEGER / wind_kmh REAL / weather_source TEXT`, update `schema.sql`, ALTER na Turso
+2. **Queries** — `run_upsert_garmin` + `run_upsert_strava` przyjmują nowe kolumny
+3. **Save scripts** — `garmin_save.py` (opcjonalnie fetchuje `get-activity-weather` przy save; można też lazy w backfill), `strava_save.py` (parsuje `average_temp`)
+4. **Backfill script** `scripts/backfill_weather.py`:
+   - Dla każdego `run` bez `temperature_c`:
+     - Jeśli Garmin: fetch `get-activity-weather` (per aid, ~200ms)
+     - Fallback: fetch Open-Meteo `weather_archive` (potrzebne start_lat/lng — z `run_laps.startLatitude` pierwszego lapa albo z `raw_json`)
+   - Rate limit: 1 req / 2s dla Open-Meteo (ich free tier tolerance)
+5. **Dashboard**:
+   - Karta Bieganie: nowy filtr "Temperatura (od-do)" nad wykresami
+   - HR-vs-pace scatter kolorowany po temperaturze (color scale niebieski→czerwony)
+   - Panel "warunki dnia" w tabeli ostatnich biegów: kolumna `🌡️ °C / 💧 % / 💨 km/h`
+
+**Trade-offs:**
+- ✅ Faktyczna analiza formy (odseparowana od pogody) — pierwszy krok do "HR-drift over time at constant conditions"
+- ✅ Backfill jednorazowy — potem każdy nowy save już auto-fetchuje
+- ❌ Open-Meteo trzymają ~2 lata historii — dla starszych biegów może brakować dokładności
+- ❌ Garmin `get-activity-weather` czasem zwraca null (bez GPS w budynku, treadmill etc.) — trzeba obsłużyć
+
+**Dependencies:** brak — `mcp__weather__weather_archive` już jest w MCP stack, Garmin MCP już jest.
+
+**Estymacja:** ~3-4h (schema + queries + save + backfill 69 biegów + dashboard filtry).
+
+**Relacja do innych faz:**
+- Faza 8.5 (skill `/tydzien`) mogłaby pobierać prognozę → decyzja o intensywności (upał → skróć)
+- Faza 5 (dashboard) — obecny wykres HR vs pace stanie się znacznie bardziej użyteczny
+
+---
+
+## 🎯 Faza 16 — Body Battery + Training Readiness w runs
+
+**Cel:** dodać kontekst świeżości do rekordów biegowych — z jakim zapasem energii wchodziłeś w trening i co Garmin sugerował rano. Razem z Fazą 15 (pogoda) i istniejącymi metrykami (HR, tempo, dynamika) — pełny obraz dlaczego bieg wyglądał jak wyglądał.
+
+**Motywacja (przykład):**
+- Bieg z BB start 85 + Training Readiness 78 rano → HR 130 przy 5:44 = normalne dla świeżego
+- Bieg z BB start 45 + TR 30 → HR 141 przy 5:43 = **oczywiste** że nogi/serce zmęczone, nie regres formy
+- Bez tych danych: interpretujesz każde odchylenie jako fitness change
+
+**Nowe kolumny w `runs`:**
+- `body_battery_start INTEGER` — 0-100, BB w momencie startu biegu ⚠️ **już jest w schemacie** (Faza 2d), tylko niewypełnione
+- `body_battery_end INTEGER` — 0-100, BB tuż po biegu (`current - drain during run`) ⚠️ **też już jest**
+- `body_battery_drain INTEGER` (nowa) — computed: start - end, ile "spaliło"
+- `training_readiness_start INTEGER` — 0-100, score rano tego dnia (NOWA kolumna)
+- `training_readiness_level TEXT` — Garminowa etykieta: `PRIME`, `HIGH`, `MODERATE`, `LOW`, `POOR`
+
+**Źródła danych:**
+1. **Body Battery** — `mcp__garmin__get-body-battery` (per day) → zwraca timeline `[{timestamp, level}, ...]` co ~3 min. Wystarczy dopasować `run.start_time` do najbliższego samplea → `body_battery_start`. Podobnie po biegu → `body_battery_end`.
+2. **Training Readiness** — `mcp__garmin__get-training-readiness` (per day) → snapshot dziennego score'u rano. Fetch dla daty biegu.
+
+**Zakres pracy:**
+1. **Schema** — dodać `body_battery_drain INTEGER`, `training_readiness_start INTEGER`, `training_readiness_level TEXT`. Update `schema.sql`. ALTER na Turso.
+2. **Queries** — `run_upsert_garmin` przyjmuje nowe kolumny (Strava nie ma tych danych — zostaje NULL).
+3. **`garmin_save.py`** — po INSERT biegu wywołaj `_fetch_bb_snapshot(start_time)` + `_fetch_training_readiness(date)`, UPDATE runsa. Async, po głównym save żeby nie blokował.
+4. **Backfill script** `scripts/backfill_freshness.py`:
+   - Dla każdego Garmin runa: fetch BB timeline dnia + TR score rano
+   - Rate limit: ~1 fetch/s (Garmin tolerance)
+   - ~40 Garmin biegów × 2 fetch = ~80 API calls, ~2 min
+5. **Dashboard:**
+   - Karta Bieganie: kolumna `🔋 BB start / drain` + `💪 Ready` w tabeli
+   - Scatter: BB_start vs HR_avg (kolor = TR level) — pokazuje "wchodziłem świeży a HR wysokie? → coś się dzieje"
+   - Timeline: `training_readiness_start` na osi X (data), Twój planned type jako kolor — widać czy nie robisz Tempo gdy TR=LOW
+
+**Trade-offs:**
+- ✅ Faktyczna interpretacja HR: "wysokie HR bo zmęczony", nie "spadek formy"
+- ✅ Backfill jednorazowy przez tydzień
+- ✅ Kolumny BB już w schemacie (część roboty zrobiona 2 tyg temu)
+- ❌ Training Readiness działa tylko na wybranych zegarkach Garmin (Fenix 6+, Forerunner 245+ w niektórych regionach). Musisz sprawdzić czy Twój generuje.
+- ❌ BB timeline też nie zawsze pełny (jak zegarek na ładowaniu → braki) — trzeba obsłużyć NULL
+
+**Dependencies:** brak — `mcp__garmin__get-body-battery` i `mcp__garmin__get-training-readiness` już w MCP stack (dodane do allowlisty dzisiaj).
+
+**Estymacja:** ~2-3h (schema 2 kolumny, save script fetch, backfill, dashboard 1 wykres + kolumny).
+
+**Relacja do innych faz:**
+- **Faza 15** (pogoda) — komplementarne. Razem: "wysokie HR bo zmęczony **i** ciepło", nie jedno albo drugie.
+- Faza 8.5 (skill `/tydzien`) — mogłaby brać TR score rano → dynamicznie modyfikować intensywność planu
 
 ---
 
@@ -471,6 +711,8 @@ Wszystkie niezależne. Codzienna rutyna projektu jest w pełni działająca.
 | 30.06.2026 | Generator workoutów: Poziom A (form → JSON download) zamiast Poziom B (auto-push do Garmin) | A: 2h pracy, zero auth; B: 6h + utrzymanie sesji/cookies. Ręczny import w Garmin Connect mobile = 30s. Migrujemy do B gdy A się sprawdzi codziennie |
 | 06.07.2026 | Faza 11: własny running-agent MCP (FastMCP wrapping db/api.py) dla Claude Desktop | Desktop ma MCP parity dla odczytu, ale nie wykonuje Pythona → bez tego brak zapisu do DB / Turso sync. ~200 linii, zero nowej logiki. Nie łamie anty-celu "nie piszemy MCP dla Garmina" — to MCP dla własnej bazy |
 | 08.07.2026 | Faza 14: `garth` zamiast Playwright do Garmin auth | Playwright login = izolowany Chromium, hasło ręcznie, sesja pada po godzinach. `garth` robi natywny OAuth (curl_cffi bije Cloudflare), refresh token żyje tygodniami, zero browsera. 2FA edge case akceptowalny (~1×/3mc). Fork etweisberg-mcp lub PR upstream. |
+| 09.07.2026 | Faza 15: pogoda (`temperature_c` / `humidity` / `wind`) w `runs` + backfill Open-Meteo | Bez pogody wykres HR-vs-pace miesza "regres formy" z "gorący dzień". Bezpośredni trigger: 11.06 vs 08.07 przy tym samym tempie 5:44/km — HR 130 vs 141 (+11 bpm), różnica wygląda jak spadek formy, ale to prawdopodobnie różnica ~10°C. Sources: Garmin `get-activity-weather` (primary) → Open-Meteo `weather_archive` (fallback). |
+| 09.07.2026 | Faza 16: Body Battery + Training Readiness w `runs` | Kolumny BB już w schemacie (Faza 2d) ale niewypełnione. Dodać `training_readiness_start` + fetch przy save (BB timeline + TR score dnia). Razem z Fazą 15 daje pełny obraz "co wpłynęło na HR" — pogoda + zmęczenie. Training Readiness > Body Battery bo purpose-built + breakdown WHY (recovery / HRV / sleep / load / stress). |
 
 ---
 

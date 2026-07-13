@@ -56,8 +56,15 @@ st.set_page_config(
 @st.cache_resource(show_spinner="Pobieram dane z Turso…")
 def _bootstrap_once():
     """Run once per Streamlit session. In cloud mode pulls fresh snapshot
-    from Turso; in local mode returns None (data.db is already the source)."""
-    return api.bootstrap_cloud()
+    from Turso; in local mode returns None (data.db is already the source).
+
+    Returns dict: {ok: bool, replica: Path|None, error: str|None}.
+    Wrapped so a Turso outage doesn't crash the whole app before UI renders.
+    """
+    try:
+        return {"ok": True, "replica": api.bootstrap_cloud(), "error": None}
+    except Exception as e:
+        return {"ok": False, "replica": None, "error": f"{type(e).__name__}: {e}"}
 
 
 # ============================================
@@ -92,7 +99,22 @@ def _check_password() -> bool:
 if not _check_password():
     st.stop()
 
-_REPLICA = _bootstrap_once()
+_BOOT = _bootstrap_once()
+if not _BOOT["ok"]:
+    st.error(f"❌ Nie mogę pobrać danych z Turso.\n\n**Błąd:** `{_BOOT['error']}`")
+    st.caption(
+        "Możliwe przyczyny: chwilowa niedostępność Turso, wygasły token, sieć. "
+        "Klik retry pobierze ponownie."
+    )
+    c1, c2 = st.columns([1, 4])
+    if c1.button("🔄 Spróbuj ponownie", type="primary"):
+        st.cache_resource.clear()
+        st.cache_data.clear()
+        st.rerun()
+    c2.caption("_Jeśli błąd wraca — sprawdź `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` w Streamlit secrets._")
+    st.stop()
+
+_REPLICA = _BOOT["replica"]
 _CLOUD_MODE = _REPLICA is not None
 
 
@@ -110,12 +132,6 @@ def q_today():
 def q_upcoming(days=7):
     with api.connect() as conn:
         return [dict(r) for r in api.planned.upcoming(conn, days=f"+{days} days", limit=7)]
-
-
-@st.cache_data(ttl=30)
-def q_current_week():
-    with api.connect() as conn:
-        return [dict(r) for r in api.planned.current_week(conn)]
 
 
 @st.cache_data(ttl=15)
@@ -139,7 +155,6 @@ def _apply_component_status(component_id: int, planned_id: int, status_key: str,
         api.planned.sync_parent_status_from_components(conn, planned_workout_id=planned_id)
         conn.commit()
     # Cache-bust: kolejne quiery zobaczą świeże dane
-    q_current_week.clear()
     q_current_week_with_components.clear()
     q_today.clear()
     # Turso push - best effort, nie przerywaj UI gdy padnie
@@ -275,10 +290,11 @@ def page_overview():
     st.title("🏃 Przegląd")
 
     # --- Top metrics row ---
+    # Single volume query (12 weeks) — slice for both metrics-row (top 4) and chart below.
+    vol_df_12 = q_weekly_volume(weeks=12).sort_values("week_start", ascending=False)
     vdot_hist = q_vdot_history(limit=1)
     races_hist = q_races_history()
     races_up = q_races_upcoming()
-    vol_df = q_weekly_volume(weeks=4)
 
     col1, col2, col3, col4, col5 = st.columns(5)
     if not vdot_hist.empty:
@@ -289,9 +305,9 @@ def page_overview():
     if pb_hm:
         col2.metric("PB HM", fmt_time(pb_hm["actual_time_sec"]),
                     help=f"{pb_hm['name']} ({pb_hm['date']})")
-    if not vol_df.empty:
-        last_week_km = float(vol_df.iloc[0]["distance_km"]) if len(vol_df) else 0
-        avg_4w = float(vol_df["distance_km"].head(4).mean())
+    if not vol_df_12.empty:
+        last_week_km = float(vol_df_12.iloc[0]["distance_km"])
+        avg_4w = float(vol_df_12["distance_km"].head(4).mean())
         col3.metric("Ostatni tydzień", f"{last_week_km:.1f} km",
                     delta=f"{last_week_km - avg_4w:+.1f} vs avg 4w")
         col4.metric("Średnia 4 tyg", f"{avg_4w:.1f} km")
@@ -384,26 +400,28 @@ def page_overview():
 
     with right:
         st.subheader("🩺 Stan ciała (14 dni)")
-        body = q_body_state(since="-14 days")
-        if not body:
+        # Single 30-day query — reuse for table (last 14 dni) + trend chart (30 dni).
+        body_30 = pd.DataFrame(q_body_state(since="-30 days"))
+        if body_30.empty:
             st.info("Brak wpisów body_state.")
         else:
-            bdf = pd.DataFrame(body)
+            body_30["date"] = pd.to_datetime(body_30["date"])
+            cutoff_14d = pd.Timestamp.now() - pd.Timedelta(days=14)
+            bdf = body_30[body_30["date"] >= cutoff_14d].copy()
             bdf["pain_display"] = bdf.apply(
                 lambda r: f"{r['pain_0_10']}/10" if pd.notna(r['pain_0_10']) else ("DOMS" if r['doms'] else "—"),
                 axis=1
             )
+            bdf["date_str"] = bdf["date"].dt.strftime("%Y-%m-%d")
             st.dataframe(
-                bdf[["date", "location", "pain_display", "notes"]].rename(columns={
-                    "date": "Data", "location": "Gdzie", "pain_display": "Ból", "notes": "Notatki"
+                bdf[["date_str", "location", "pain_display", "notes"]].rename(columns={
+                    "date_str": "Data", "location": "Gdzie", "pain_display": "Ból", "notes": "Notatki"
                 }),
                 hide_index=True, use_container_width=True, height=220,
             )
             # Trend bólu per lokalizacja (30 dni)
-            trend = pd.DataFrame(q_body_state(since="-30 days"))
-            trend = trend[trend["pain_0_10"].notna()]
+            trend = body_30[body_30["pain_0_10"].notna()]
             if not trend.empty:
-                trend["date"] = pd.to_datetime(trend["date"])
                 fig = px.line(trend.sort_values("date"), x="date", y="pain_0_10",
                               color="location", markers=True,
                               labels={"pain_0_10": "Ból 0-10", "date": "", "location": ""})
@@ -416,9 +434,10 @@ def page_overview():
 
     # --- Wolumen tygodniowy chart ---
     st.subheader("📊 Wolumen tygodniowy (12 tyg)")
-    vol_df_12 = q_weekly_volume(weeks=12).sort_values("week_start")
+    # Reuse vol_df_12 fetched above; chart wants ascending sort.
     if not vol_df_12.empty:
-        fig = px.bar(vol_df_12, x="week_start", y="distance_km",
+        vol_chart = vol_df_12.sort_values("week_start")
+        fig = px.bar(vol_chart, x="week_start", y="distance_km",
                      color="trend", text="distance_km",
                      color_discrete_map={"peak": "#22c55e", "recovery": "#f59e0b", None: "#3b82f6"},
                      labels={"week_start": "Tydzień (pon)", "distance_km": "km", "trend": "Trend"})
