@@ -1,0 +1,22 @@
+# Fly.io config for running-agent-bot.
+# Wywolaj `fly launch` z folderu bot/ zeby wygenerowac plik automatycznie,
+# potem edytuj wg tego szablonu, LUB stworz appke recznie:
+#   cd bot
+#   fly apps create running-agent-bot
+#   fly secrets set TELEGRAM_BOT_TOKEN=... TURSO_DATABASE_URL=... TURSO_AUTH_TOKEN=... ALLOWED_USER_IDS=...
+#   fly deploy
+
+app = "running-agent-bot"
+primary_region = "waw"   # Warsaw — najblizej Krakowa
+
+[build]
+
+[env]
+  PYTHONUNBUFFERED = "1"
+
+# Bot uzywa long-pollingu, wiec nie potrzebuje portu ani health checkow HTTP.
+# Fly restartuje kontener automatycznie przy crashach.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
