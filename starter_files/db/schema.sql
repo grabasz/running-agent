@@ -318,3 +318,60 @@ CREATE TABLE IF NOT EXISTS vdot_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vdot_date ON vdot_history(date);
+
+-- ============================================
+-- LIFE / TASKS / NOTES (Faza 17 — "Rozkminy")
+-- ============================================
+
+-- Hierarchiczna lista zadań. parent_id NULL = root task lub projekt (grupa).
+-- SMART: title=Specific, success_criteria=Measurable, due_date=Time-bound (opcjonalne).
+CREATE TABLE IF NOT EXISTS tasks (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id           INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    category            TEXT NOT NULL,              -- sport / praca / dom / relacje / zdrowie / inne
+    title               TEXT NOT NULL,
+    description         TEXT,
+    success_criteria    TEXT,
+    due_date            TEXT,                       -- YYYY-MM-DD (NULL = brak deadline)
+    status              TEXT NOT NULL DEFAULT 'open',  -- open / done / wontdo
+    priority            TEXT,                       -- low / med / high
+    created_at          TEXT DEFAULT (datetime('now')),
+    updated_at          TEXT,
+    done_at             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
+CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
+
+-- Cel per kategoria per tydzień (jeden goal per (week, category) — UNIQUE).
+CREATE TABLE IF NOT EXISTS weekly_goals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    week_start  TEXT NOT NULL,                      -- ISO Monday YYYY-MM-DD
+    category    TEXT NOT NULL,
+    goal        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open',       -- open / done
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT,
+    UNIQUE(week_start, category)
+);
+
+CREATE INDEX IF NOT EXISTS idx_weekly_goals_week ON weekly_goals(week_start);
+
+-- Strumień notatek — Claude auto-wrzuca insight/decision/reminder/idea; user może manual.
+CREATE TABLE IF NOT EXISTS notes (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    date                TEXT NOT NULL,
+    category            TEXT NOT NULL,              -- insight / decision / reminder / idea
+    content             TEXT NOT NULL,
+    related_task_id     INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    related_run_id      INTEGER REFERENCES runs(id) ON DELETE SET NULL,
+    related_session_id  INTEGER REFERENCES gym_sessions(id) ON DELETE SET NULL,
+    source              TEXT DEFAULT 'chat',        -- chat / claude_auto / manual
+    created_at          TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_date ON notes(date);
+CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category);
+CREATE INDEX IF NOT EXISTS idx_notes_task ON notes(related_task_id);

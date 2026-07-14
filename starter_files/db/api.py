@@ -44,6 +44,9 @@ races           = _load("races.sql")
 body            = _load("body.sql")
 vdot            = _load("vdot.sql")
 planned         = _load("planned.sql")
+tasks           = _load("tasks.sql")
+goals           = _load("goals.sql")
+notes           = _load("notes.sql")
 _stats          = _load("stats.sql")
 
 
