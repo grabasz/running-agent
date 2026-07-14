@@ -1,87 +1,91 @@
-Pokaż ostatni bieg jako tabelkę i **zapisz do DB**.
+Show the latest run as a table and **save it to DB**.
 
-**Garmin primary** (z running dynamics: GCT, vertical oscillation, stride length, training effect, VO₂max). **Strava fallback** gdy Garmin token wygasł.
+**Garmin primary** (with running dynamics: GCT, vertical oscillation, stride length, training effect, VO₂max). **Strava fallback** when the Garmin token has expired.
+
+**Output language:** Polish (user is Polish, per CLAUDE.md).
 
 ---
 
-## KROK 1 — pobierz bieg
+## STEP 1 — Fetch the run
 
-### 1A. Spróbuj Garmin (preferowane, ma running dynamics)
+### 1A. Try Garmin (preferred — has running dynamics)
 
-1. `mcp__garmin__list-activities` z `limit: 10`
-2. **Znajdź pierwszy element** z `activityType.typeKey == "running"` (pomiń e_bike, swim, strength). Zapamiętaj `activityId`.
-3. `mcp__garmin__get-activity-splits` z `activityId` z kroku 2
-4. Zbuduj bundle JSON: `{"activity": <element z list-activities>, "splits": <response get-activity-splits>}`
-5. **Zapisz** bundle do `db/_tmp_garmin.json` (Write tool)
-6. **Wywołaj**: `python scripts/garmin_save.py db/_tmp_garmin.json`
-7. Skrypt zapisuje do DB (`runs` + `run_laps` z running dynamics) i drukuje gotową tabelkę markdown — **wklej output 1:1** poniżej.
+0. **Pre-flight:** invoke `/garmin-refresh` (silent path if session OK — ~1s; auto-refresh cookies via open Playwright if 401 — ~5s). Only falls back to interactive login when the browser session itself is dead.
+0b. **Cache check:** `python -m db.cli garmin-cache --format=json` — exit code 0 = cache hit (age <10 min), pick the newest `running` activity by `startTimeLocal` from cached list. Skip STEP 1 entirely. Exit 2 = miss → continue.
+1. `mcp__garmin__list-activities` with `limit: 10` — **also write the result to cache** afterwards: save array to `db/_tmp_activities.json` then `python -m db.cli garmin-cache --write --stdin-file=db/_tmp_activities.json`. That way `/gym` or `/analyze` in the same conversation reuse the fetch.
+2. **Find the first element** where `activityType.typeKey == "running"` (skip e_bike, swim, strength). Remember its `activityId`.
+3. `mcp__garmin__get-activity-splits` with the `activityId` from step 2.
+4. Build the JSON bundle: `{"activity": <element from list-activities>, "splits": <response from get-activity-splits>}`
+5. **Save** the bundle to `db/_tmp_garmin.json` (Write tool)
+6. **Run**: `python scripts/garmin_save.py db/_tmp_garmin.json`
+7. The script writes to DB (`runs` + `run_laps` with running dynamics) and prints a ready-to-paste markdown table — **paste the output 1:1** below.
 
-**Jeśli `mcp__garmin__list-activities` zwraca błąd 401 / "session expired"** → przejdź do **1B**.
+**If `mcp__garmin__list-activities` returns 401 / "session expired"** → jump to **1B**.
 
-### 1B. Fallback Strava (gdy Garmin nie działa)
+### 1B. Strava fallback (when Garmin isn't available)
 
 ```
 python scripts/run.py
 ```
-Opcjonalnie: `python scripts/run.py <activity_id>` dla konkretnego biegu.
+Optionally: `python scripts/run.py <activity_id>` for a specific run.
 
-Skrypt automatycznie zapisuje do DB (`source='strava'`, bez running dynamics) i drukuje tabelkę markdown.
+The script auto-saves to DB (`source='strava'`, without running dynamics) and prints a markdown table.
 
 ---
 
-## KROK 2 — Wklej tabelkę + dostosuj 2 rzeczy
+## STEP 2 — Paste the table + adjust two things
 
-**Wklej output skryptu 1:1** (już ma `🏷️ Typ` z auto-klasyfikacji w nagłówku — skoryguj jeśli błędna). Potem:
+**Paste the script output 1:1** (it already includes `🏷️ Typ` from auto-classification in the header — correct it if wrong). Then:
 
-1. **Weryfikuj Typ** w nagłówku (auto-klasyfikacja może się mylić) — `Easy` / `Tempo` / `Interwały` / `Wyścig` / `Long` / `Recovery` / `Shakeout`. Jeśli zmieniasz → `UPDATE runs SET type='...' WHERE id=<run_id>`.
+1. **Verify the Typ** in the header (auto-classification can miss) — `Easy` / `Tempo` / `Interwały` / `Wyścig` / `Long` / `Recovery` / `Shakeout`. If you change it → `UPDATE runs SET type='...' WHERE id=<run_id>`.
 
-2. **Zamień markery** (🔥 / 🐢 / 💓 / 📉 / ⛰️ / ⏸️ / ⚖️) w kolumnie komentarz na krótkie obserwacje trenerskie (6–8 słów). Marker tylko sygnalizuje GDZIE komentować.
+2. **Replace the markers** (🔥 / 🐢 / 💓 / 📉 / ⛰️ / ⏸️ / ⚖️) in the comment column with short coach observations (6-8 words). The marker only signals WHERE to comment.
 
-**Pozostałe km zostaw bez komentarza.** Nie wymyślaj komentarzy do równych km.
+**Leave the remaining kms without a comment.** Don't invent comments for average kms.
 
-### Auto-markery
-- 🔥 najszybszy / 🐢 najwolniejszy
+### Auto-markers
+- 🔥 fastest / 🐢 slowest
 - 💓 HR peak
-- 📉 dołek formy (najniższa kadencja)
-- ⛰️ podbieg +Xm
-- ⏸️ stop ~Xmin (tylko Strava — Garmin nie wykrywa pauz)
-- **⚖️ asymetria L/R** (gdy GCT balance odchyła >0.7% od 50%) — **NOWE dla Garmina**
+- 📉 form dip (lowest cadence)
+- ⛰️ climb +Xm
+- ⏸️ stop ~Xmin (Strava only — Garmin doesn't detect pauses)
+- **⚖️ L/R asymmetry** (when GCT balance deviates >0.7% from 50%) — **NEW for Garmin**
 
-### Wytyczne komentarzy
-Komentarz to obserwacja, nie dowcip. Tempo + HR + wzn + (dla Garmina) dynamics.
-- HR rośnie, tempo trzyma → "serce pracuje, nogi stoją"
-- Szybki km po zjeździe → "zjazd skasowany z głową"
-- Wolniejszy km na podbiegu → "podbieg wziął swoje"
-- Asymetria L/R rośnie → "prawa noga przejmuje pod zmęczeniem"
-- Krótsze GCT + dłuższy krok → "forma elite-like po pauzie"
-- Max 6–8 słów, ton trenerski, konkretny
+### Comment guidelines
+A comment is an observation, not a joke. Pace + HR + climb + (for Garmin) dynamics.
+- HR climbs, pace holds → "serce pracuje, nogi stoją"
+- Fast km after a downhill → "zjazd skasowany z głową"
+- Slower km on a climb → "podbieg wziął swoje"
+- L/R asymmetry growing → "prawa noga przejmuje pod zmęczeniem"
+- Shorter GCT + longer stride → "forma elite-like po pauzie"
+- Max 6-8 words, coach tone, concrete.
 
-Żadnego tekstu przed tabelką.
-
----
-
-## KROK 3 — PODSUMOWANIE (tylko dla Wyścigu)
-
-Dla `Easy` / `Tempo` / `Interwały` / `Long` / `Recovery` / `Shakeout` — **pomiń**.
-
-Załaduj `fitness.md` i `races.md` (jeśli nie były czytane). Napisz `## 📋 Analiza wyścigu`:
-
-**✅ Co poszło bardzo dobrze** — min. 4 obserwacje z danymi z laps/splits.
-
-**🔧 Co warto rozważyć** — min. 3 punkty z odniesieniem do kolejnych startów. Konkretny km, HR, tempo. Zakończ jednym zdaniem spinającym w kontekście sezonu.
+No text before the table.
 
 ---
 
-## KROK 4 — AKTUALIZACJA PLIKÓW (tylko dla Wyścigu, po KROK 3)
+## STEP 3 — SUMMARY (races only)
 
-Oblicz VDOT z czasu i dystansu. Porównaj z `fitness.md`.
+For `Easy` / `Tempo` / `Interwały` / `Long` / `Recovery` / `Shakeout` — **skip**.
 
-**Jeśli nowy T-pace szybszy o >5s/km:**
+Load `fitness.md` and `races.md` (if not in context). Write `## 📋 Analiza wyścigu`:
 
-1. Zaktualizuj `fitness.md` (Edit): VDOT + data + wszystkie strefy + Historia progu + Race Predictors
-2. Jeśli PB — zaktualizuj `profile.md` w sekcji `## PB`
-3. Plus w DB: `INSERT INTO vdot_history` i `UPDATE races SET actual_time_sec=..., is_pb=1`
-4. Wyświetl:
+**✅ Co poszło bardzo dobrze** — at least 4 observations backed by laps/splits data.
+
+**🔧 Co warto rozważyć** — at least 3 points referencing upcoming starts. Specific km, HR, pace. Close with one sentence tying the analysis to the season.
+
+---
+
+## STEP 4 — FILE UPDATES (races only, after STEP 3)
+
+Compute VDOT from time and distance. Compare with `fitness.md`.
+
+**If the new T-pace is >5s/km faster:**
+
+1. Update `fitness.md` (Edit): VDOT + date + all zones + Historia progu + Race Predictors
+2. If PB — update `profile.md` in the `## PB` section
+3. Plus in DB (SQL inline — no CLI wrapper yet): `INSERT INTO vdot_history` and `UPDATE races SET actual_time_sec=..., is_pb=1`
+4. Print:
 ```
 📝 Zaktualizowano:
 - fitness.md: VDOT [stary] → [nowy], T-pace [stary] → [nowy]
@@ -89,25 +93,50 @@ Oblicz VDOT z czasu i dystansu. Porównaj z `fitness.md`.
 - DB: vdot_history +1, races UPDATE PB
 ```
 
-**Jeśli różnica ≤5s/km:**
+**If the difference is ≤5s/km:**
 `ℹ️ Forma potwierdzona, próg bez zmian (różnica <5s/km — poniżej progu aktualizacji).`
 
 ---
 
-## KROK 5 — Sprzątanie (opcjonalne)
+## STEP 5 — Cleanup (optional)
 
-Po użyciu usuń `db/_tmp_garmin.json` (Bash: `rm db/_tmp_garmin.json` lub Filesystem MCP).
+After use, delete `db/_tmp_garmin.json` (Bash: `rm db/_tmp_garmin.json` or Filesystem MCP).
 
 ---
 
-## KROK 6 — Push do Turso (OBOWIĄZKOWY, na końcu)
+## STEP 6 — Push to Turso (MANDATORY, at the end)
 
-Zawsze po zapisie do DB — bez pytania usera:
+Always after a DB write — no user prompt:
 
 ```
-python db/sync.py push
+python db/sync.py push --after=run
 ```
 
-Na końcu wypisz krótko: `☁️ Turso: OK` (lub błąd + info że lokalne zmiany zostały, do retry).
+The `--after=run` preset pushes only touched tables (runs, run_laps, planned_workouts, planned_workout_components) — ~1-2s instead of ~5-8s for full sync.
 
-To samo dotyczy `mark_status` na `planned_workouts` (link z zapisanego biegu / update statusu). Cel: mobile / dashboard mają aktualne dane bez przypominania.
+At the end print briefly: `☁️ Turso: OK` (or the error + note that local changes remain for retry).
+
+Same applies to `mark_status` on `planned_workouts` (auto-link from a saved run / status update). Goal: mobile / dashboard stay current without reminders.
+
+### ⚠️ Bugfix: notes/tasks/weekly_goals require a SECOND push
+
+**The `run` preset does NOT include `notes`, `tasks`, `weekly_goals`** — those are in the `life` preset. Historical bug (2026-07-14): notes written from the /run analysis got stuck in local SQLite because only `--after=run` was pushed. Dashboard (which reads from Turso replica) showed nothing.
+
+**Rule:** if during this /run flow you also wrote to `notes` (e.g. saved insights linked to `run_id` via `api.notes.add()`), or touched `tasks` / `weekly_goals`, run a **second push right after the run one**:
+
+```
+python db/sync.py push --after=life
+```
+
+Both pushes are safe to run back-to-back (~1-2s each). Signal both in the final line: `☁️ Turso: OK (run + life)`. If only run was touched, keep the original single push and print `☁️ Turso: OK`.
+
+---
+
+## STEP 7 — Print timing summary (end of every /run)
+
+Right before finishing the response, run:
+```
+python -m db.cli perf-recent --minutes=5 --label=run
+```
+
+Print the resulting `⏱️` line as the very last line of the response so the user sees how much backend time this skill cost.
