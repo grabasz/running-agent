@@ -34,6 +34,9 @@ starter_files/db/data.db-*
 starter_files/db/data_replica.db*
 starter_files/db/.env
 
+# Bot secrets — TELEGRAM_BOT_TOKEN + Turso credentials
+starter_files/bot/.env
+
 # Python bytecode
 __pycache__/
 *.pyc
