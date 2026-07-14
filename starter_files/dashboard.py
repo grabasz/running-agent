@@ -854,31 +854,63 @@ def page_life():
     st.header(f"🎯 Cele tygodnia — od pon. {week_start}")
     goals_map = q_goals_week(week_start)
 
-    goal_cols = st.columns(3)
-    for i, cat in enumerate(LIFE_CATEGORIES):
-        with goal_cols[i % 3]:
-            existing = goals_map.get(cat)
-            current_val = existing["goal"] if existing else ""
-            status = existing["status"] if existing else "open"
-            icon = LIFE_ICONS[cat]
+    filled_cats = [c for c in LIFE_CATEGORIES if goals_map.get(c)]
+    empty_cats = [c for c in LIFE_CATEGORIES if not goals_map.get(c)]
 
-            input_key = f"goal_input_{week_start}_{cat}"
-            st.text_input(
-                f"{icon} {cat.capitalize()}",
-                value=current_val,
-                key=input_key,
-                placeholder="Cel na ten tydzień…",
-                on_change=_cb_goal_upsert,
-                args=(week_start, cat, input_key),
-            )
-            if existing:
-                st.checkbox(
-                    f"✅ zrobione" if status == "open" else "↺ odznacz",
-                    value=(status == "done"),
-                    key=f"goal_chk_{week_start}_{cat}",
-                    on_change=_cb_goal_toggle,
-                    args=(existing["id"], status),
+    if filled_cats:
+        goal_cols = st.columns(min(3, len(filled_cats)))
+        for i, cat in enumerate(filled_cats):
+            with goal_cols[i % 3]:
+                existing = goals_map[cat]
+                status = existing["status"]
+                icon = LIFE_ICONS[cat]
+                input_key = f"goal_input_{week_start}_{cat}"
+
+                st.markdown(f"**{icon} {cat.capitalize()}**")
+                c_chk, c_input = st.columns([1, 8], vertical_alignment="center")
+                with c_chk:
+                    st.checkbox(
+                        "zrobione", value=(status == "done"),
+                        key=f"goal_chk_{week_start}_{cat}",
+                        label_visibility="collapsed",
+                        help="Zaznacz gdy zrobione",
+                        on_change=_cb_goal_toggle,
+                        args=(existing["id"], status),
+                    )
+                with c_input:
+                    st.text_input(
+                        "cel", value=existing["goal"],
+                        key=input_key,
+                        placeholder="Cel na ten tydzień…",
+                        label_visibility="collapsed",
+                        on_change=_cb_goal_upsert,
+                        args=(week_start, cat, input_key),
+                    )
+    else:
+        st.caption("_Brak celów na ten tydzień — dodaj pierwszy poniżej._")
+
+    if empty_cats:
+        with st.expander(f"➕ Dodaj cel dla kategorii ({len(empty_cats)} dostępnych)", expanded=not filled_cats):
+            with st.form(f"add_goal_form_{week_start}", clear_on_submit=True):
+                add_cat = st.selectbox(
+                    "Kategoria", empty_cats,
+                    format_func=lambda c: f"{LIFE_ICONS[c]} {c.capitalize()}",
+                    key=f"new_goal_cat_{week_start}",
                 )
+                add_text = st.text_input(
+                    "Cel", key=f"new_goal_text_{week_start}",
+                    placeholder="Cel na ten tydzień…",
+                )
+                if st.form_submit_button("Zapisz cel"):
+                    if not add_text.strip():
+                        st.error("Wpisz treść celu.")
+                    else:
+                        with api.connect() as conn:
+                            api.goals.upsert(conn, week_start=week_start, category=add_cat,
+                                             goal=add_text.strip(), status=None)
+                        _invalidate_life_cache()
+                        _push_life_to_turso()
+                        st.rerun()
 
     st.divider()
 
