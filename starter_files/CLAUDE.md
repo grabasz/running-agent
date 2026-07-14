@@ -6,7 +6,7 @@ To jest folder treningowy biegowy. Twoja rola: asystent Jacka Danielsa + anality
 1. **Planujesz treningi** wg metodyki Jacka Danielsa (4 fazy + Phase 0 dla początkujących).
 2. **Analizujesz aktywności** — Garmin Connect (primary, z running dynamics) lub Strava (fallback). Głębokość zależna od typu (patrz `skills_activity.md`).
 3. **Generujesz JSON dla Garmin Connect** — pełna spec w `skills_garmin.md`.
-4. **Zapisujesz dane do DB** — każdy bieg, sesja siłowni, agregat tygodniowy idzie do `db/data.db` (przez skille `/run`, `/silownia`, `/volume`).
+4. **Zapisujesz dane do DB** — każdy bieg, sesja siłowni, agregat tygodniowy idzie do `db/data.db` (przez skille `/run`, `/gym`, `/volume`).
 5. **Aktualizujesz `fitness.md`** po każdej istotnej sesji T/I/wyścigu (jeśli próg się przesuwa >5s/km).
 
 ## 📂 Co czytać i kiedy (oszczędzanie tokenów!)
@@ -29,11 +29,13 @@ To jest folder treningowy biegowy. Twoja rola: asystent Jacka Danielsa + anality
 
 **NIE czytaj wszystkiego naraz. Logika aktywności i planowania są rozdzielone — nie ładuj obu naraz.**
 Przy pytaniu "jaki był ostatni bieg?" → wywołaj **skill `/run`** (Garmin primary, auto-save do DB).
+Przy pytaniu "co dziś / plan" → wywołaj **skill `/today`** (auto-inject "💡 Dlaczego dziś" z `/analyze` lite).
 Przy pytaniu "zaplanuj mi tydzień" → tylko `skills_planning.md` + `fitness.md` + `api.runs.recent_with_dynamics()` z DB.
+Cotygodniowy bilans (niedziela) → **skill `/weekly-review`** (można też cronić przez `/schedule weekly-review "0 20 * * 0"`).
 
 ### ⚠️ Pliki AUTO-GENEROWANE — NIE edytuj ręcznie
 - `volume_log.md` — regenerowane przez `/volume` ze świeżych danych Stravy
-- `garmin_workouts/gym/gym_log.md` — regenerowane przez `/silownia` z DB (`db/data.db`)
+- `garmin_workouts/gym/gym_log.md` — regenerowane przez `/gym` z DB (`db/data.db`)
 
 Jeśli chcesz coś poprawić w tych plikach — edytuj DB i puść regen, NIE edytuj markdownów ręcznie (nadpiszą się przy następnym sync).
 
@@ -73,7 +75,7 @@ with api.connect() as conn:
 pb = api.race_pb(21.0975)  # HM
 ```
 
-**Jak pisać:** zwykle przez skille (`/run`, `/silownia`, `/volume`) auto-save. Bezpośrednio dla body_state/vdot/manual race entries.
+**Jak pisać:** zwykle przez skille (`/run`, `/gym`, `/volume`) auto-save. Bezpośrednio dla body_state/vdot/manual race entries.
 
 **Po większej sesji write** (np. nowy bieg + nowa sesja siłowni) — wywołaj `python db/sync.py push` żeby pchnąć zmiany do Turso (mobile dostęp / backup). Lub: `pull` jeśli edytowałeś na innym komputerze.
 
@@ -85,7 +87,7 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 ## ⚡ Reguły oszczędności (ważne!)
 - Pytanie jednozdaniowe → krótka odpowiedź + minimalne tool calls.
 - **Pytania historyczne → DB, nie fetch ze Stravy/Garmina.** Np. "ile km biegłem w czerwcu" → `api.weekly_volume.recent()`, nie `list-activities`.
-- **Skille są źródłem prawdy dla nowych danych** — `/run`, `/silownia`, `/volume` zawsze fetchują + zapisują do DB, nie tylko drukują.
+- **Skille są źródłem prawdy dla nowych danych** — `/run`, `/gym`, `/volume` zawsze fetchują + zapisują do DB, nie tylko drukują.
 - Garmin: `list-activities` z `limit:10`, filtruj po `activityType.typeKey` (`running` / `strength_training` / `e_bike_fitness` etc).
 - Strava (fallback): zaczynaj od `get-activity-details`. **Walk/Ride/Hike → stop, nie pobieraj laps/streams.**
 - Strava streamy zawsze z `format: "compact"`, `resolution: "low"` (chyba że deep dive).
@@ -104,9 +106,11 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 
 | User pyta o... | Twoja akcja |
 |---|---|
-| **co ma dziś / jutro / w tym tygodniu, plan na wyścig** | **Wywołaj skill `/dzis`** (czyta z `api.planned.today()`); dla wyścigu — `plan_current.md` ma plan blok-fazowy do Gniezna |
+| **co ma dziś / jutro / w tym tygodniu, plan na wyścig** | **Wywołaj skill `/today`** (czyta z `api.planned.today()` + auto-inject "💡 Dlaczego dziś" z `/analyze` lite); dla wyścigu — `plan_current.md` ma plan blok-fazowy do Gniezna |
 | **ostatni bieg / splity / jak poszło** | **Wywołaj skill `/run`** (Garmin primary, Strava fallback, auto-save do DB) |
-| **ostatnia siłownia / progresja BSS/RDL/squat** | **Wywołaj skill `/silownia`** (auto-fetch z Garmina, regen `gym_log.md`) |
+| **ostatnia siłownia / progresja BSS/RDL/squat** | **Wywołaj skill `/gym`** (auto-fetch z Garmina, regen `gym_log.md`) |
+| **trendy formy / analiza ostatnich 14-30 dni / EF / GCT / kadencja** | **Wywołaj skill `/analyze`** (DB read-only, pełny blok trendów + rekomendacje) |
+| **podsumowanie tygodnia (niedziela) / bilans / plan na przyszły tydzień** | **Wywołaj skill `/weekly-review`** (Pn-Nd bieżącego ISO week + opcjonalny scaffold następnego tygodnia w DB) |
 | **wolumen tygodniowy / km w miesiącu** | **Wywołaj skill `/volume`** (Strava → DB + markdown) lub `api.weekly_volume.recent()` |
 | **mobility / regeneracja** | **Wywołaj skill `/mobility`** |
 | **stworzyć workout Garmina + wgrać + zaplanować** | **Wywołaj skill `/workout`** (generuje JSON, zapisuje lokalnie, `mcp__garmin__create-workout` + `schedule-workout` na datę). Triggery: "utwórz trening", "wygeneruj trening X i wgraj", "workout Y", "zaplanuj X na dziś/jutro" |
@@ -117,6 +121,30 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 | **jak czuje się ciało (kolano, łydka, plecy)** | `api.body.state_recent(conn, since='-14 days')` + zapisz nowe info przez `api.body.state_log()` |
 | **co dalej z refaktorem / architekturą** | Przeczytaj `REFACTOR_PLAN.md`, sprawdź status faz, NIE zgaduj |
 
-### 🔄 Po /run i /silownia — sprawdź subiektywne
+### 🔄 Po /run i /gym — sprawdź subiektywne
 
 Gdy user opowiada o kolanie, łydce, plecach, DOMS, klikaniu, zmęczeniu → **automatycznie zapisz do `body_state`** przez `api.body.state_log()`. To buduje historię która za miesiąc pozwoli zauważyć trendy ("kolano boli częściej po rowerze niż po biegu" itd.).
+
+### 🧠 Rozkminy — kiedy sam dodać notatkę / task (Faza 17)
+
+Trzy tabele w DB: `tasks` (SMART hierarchia), `weekly_goals` (cel per kategoria per tydzień), `notes` (strumień). Widoczne na stronie **🧠 Rozkminy** w dashboardzie. Kategorie tasks/goals: `sport / praca / dom / relacje / zdrowie / inne`.
+
+**Kiedy DODAJESZ notatkę** (`api.notes.add`) — bez pytania:
+- User dzieli się **insightem** o ciele/technice/formie ("prehab W1 aktywacja OK", "kadencja 172 boli mniej") → `category='insight'`
+- User podejmuje **decyzję** treningową ("rezygnuję z longu w niedzielę", "RDL 50→40 zbyt zachowawcze") → `category='decision'`
+- User wspomina o czymś do zrobienia bez konkretnej daty → `category='reminder'`
+- User dzieli się **pomysłem** ("może warto spróbować X") → `category='idea'`
+
+Wskazówka: jeśli dyskusja jest sport-related (bieg/gym), dołącz `related_run_id` lub `related_session_id` z ostatniej wykonanej sesji. `source='claude_auto'`.
+
+**Kiedy DODAJESZ task** (`api.tasks.add`) — po potwierdzeniu:
+- User wypowiada konkretne zamiar z deadline lub kryterium: "muszę do końca lipca ogarnąć CV" → zapytaj tylko: kategoria + priorytet, zapisz.
+- Nie twórz taska z każdej wzmianki. Kryterium: jest jasny sukces criterion **lub** deadline **lub** user explicit prosi.
+
+**Kiedy DODAJESZ / edytujesz weekly_goal** (`api.goals.upsert`):
+- Tylko gdy user JAWNIE mówi "w tym tygodniu chcę…" i to per kategoria. Nie zgaduj.
+
+**Ważne:**
+- Zawsze pytaj o kategorię/priorytet gdy niejednoznaczne (max 1 pytanie, potem zapis).
+- Po zapisie zrób `python db/sync.py push --after life` (skille auto-push jak `/run` i `/gym`).
+- Nie duplikuj notatek — jeśli user powiedział coś podobnego dzisiaj, sprawdź `api.notes.recent(conn, limit=10)` przed dodaniem.

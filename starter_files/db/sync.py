@@ -68,6 +68,10 @@ TABLE_ORDER = [
     "run_streams",       # -> runs
     "planned_workouts",  # -> workout_types, workout_statuses, runs, gym_sessions
     "planned_workout_components",  # -> planned_workouts, workout_statuses
+    # Life / Rozkminy (Faza 17)
+    "tasks",             # self-ref parent_id (safe as-is: NULL parents first via INSERT order in single table)
+    "weekly_goals",      # no FK
+    "notes",             # -> tasks, runs, gym_sessions
 ]
 
 
@@ -121,6 +125,7 @@ PRESET_AFTER = {
     "volume":  ["weekly_volume"],
     "body":    ["body_state"],
     "vdot":    ["vdot_history", "races"],
+    "life":    ["tasks", "weekly_goals", "notes"],
 }
 
 
