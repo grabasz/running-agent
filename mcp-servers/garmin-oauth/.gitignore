@@ -1,0 +1,20 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Local dev / secrets — NEVER commit
+.env
+.env.*
+*.token
+oauth-state.json
+garmin_tokens.json
+
+# Fly / Docker local artifacts
+.fly/
+.docker/
+*.log
+
+# Editor
+.vscode/
+.idea/

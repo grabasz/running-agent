@@ -548,9 +548,38 @@ CREATE TABLE notes (
 
 ---
 
-## 🎯 Faza 14 — Garmin auth: garth zamiast Playwright
+## ✅ Faza 14 — Garmin auth: OAuth zamiast Playwright (ZROBIONE 25.07.2026)
 
-**Cel:** wyeliminować zależność od przeglądarki (Playwright) w loginie do Garmina. Obecnie `mcp__garmin__garmin-login` odpala izolowany Chromium → user wpisuje hasło ręcznie → cookies eksportowane do `~/.garmin-connect-mcp/session.json`. Sesja pada po kilku godzinach → cały flow od nowa.
+**Co stoi:**
+- Własny Python MCP server w `~/.mcp-servers/garmin-oauth/server.py` (36 tools, FastMCP)
+- Auth: `python-garminconnect` (0.3.2) + `garth` pod maską — OAuth1 (~1 rok) + OAuth2 24h silent refresh
+- Sekrety w **Windows Credential Manager** (przez `keyring`) — DPAPI-encrypted, nic w plaintext
+- **2FA/MFA supported** — pierwszy login z SMS/authenticator (raz na rok), potem silent
+- Krytyczny gotcha: `truststore.inject_into_ssl()` NA POCZĄTKU server.py — bez tego SSL fail na Windows (certifi bundle brak Cloudflare intermediates)
+- **Fallback zachowany**: `mcp__garmin-cookies__*` (stary @etweisberg) w .mcp.json + skill `garmin-refresh`
+
+**Zmiana w `.mcp.json`:**
+- `mcp__garmin__*` → Python OAuth server (primary)
+- `mcp__garmin-cookies__*` → @etweisberg (fallback awaryjny)
+- Backup: `.mcp.json.pre-oauth.backup`
+
+**Setup (jednorazowo):**
+```powershell
+python C:\Users\grabb\.mcp-servers\garmin-oauth\setup_credentials.py    # email+password → keyring
+python C:\Users\grabb\.mcp-servers\garmin-oauth\test_login.py           # MFA + zapis tokenów
+```
+
+**Weryfikacja:** `mcp__garmin__check-session` → `{status:ok, steps:X, resting_hr:Y}` bez Playwrighta.
+
+**Refresh procedure (za ~rok):** ten sam `test_login.py` — poda kod MFA raz, tokeny odnowione.
+
+**Odbłokowuje:** Faza 12.5 (`/workout upload` w bocie) — trywialne teraz (garminconnect.upload_workout + schedule_workout).
+
+---
+
+## ⏸️ Faza 14 (stara — porzucona planowana wersja)
+
+**Cel oryginalny (17.07.2026):** wyeliminować zależność od przeglądarki (Playwright) w loginie do Garmina. Obecnie `mcp__garmin__garmin-login` odpala izolowany Chromium → user wpisuje hasło ręcznie → cookies eksportowane do `~/.garmin-connect-mcp/session.json`. Sesja pada po kilku godzinach → cały flow od nowa.
 
 **Rozwiązanie:** natywny OAuth login przez bibliotekę **`garth`** (Python) — programmatic username/password → OAuth1 + OAuth2 tokens → refresh token żyje **tygodniami**, zero browsera.
 
@@ -674,6 +703,136 @@ CREATE TABLE notes (
 - Faza 8.5 (skill `/tydzien`) — mogłaby brać TR score rano → dynamicznie modyfikować intensywność planu
 
 ---
+
+---
+
+## 🎯 Faza 18 — Multi-tenant garmin-mcp (dzieci + znajomi)
+
+**Kiedy:** dopiero jak Jurek/Mati/znajomi zaczną chcieć własnych remote MCP. Dziś zostajemy przy per-osoba Fly app (Opcja A1 — najprostsze bootstrapowanie).
+
+**Trigger do startu:** ≥3 osoby proszą o własną instancję ALBO monthly Fly cost > $10.
+
+**Cel:** jeden Fly app obsługuje wielu userów, każdy ze swoim Garminem, swoim OAuth client, swoimi tokenami — bez wzajemnego dostępu.
+
+### Model dziś (Opcja A1 — per-user deploy)
+- Każdy user = własna Fly app (`garmin-mcp-<nick>.fly.dev`)
+- Własne `GARMIN_TOKENS_JSON`, `OAUTH_CLIENT_SECRET` per app
+- Skrypt `provision-user.ps1 <nick>` (do napisania): clone, patch fly.toml, `flyctl launch`, gen secretów, hint "zaloguj X do Garmina + wgraj tokeny"
+- Koszt: Fly free = 3 apps darmowe, powyżej ~$2-3/mo per app
+- Skalowanie: proste do ~5 osób, potem koszty i ops rosną liniowo
+
+### Model docelowy (Opcja A2 — multi-tenant)
+- Jeden Fly app, kilka machines
+- Per-user Garmin tokens w DB (nie na volume) — np. Turso z per-user table + user_id foreign key
+- Per-user OAuth clients — `state.clients[client_id]` już to ma, wystarczy scope + subject binding
+- Request routing: token `subject` claim → user_id → tenant-scoped Garmin client
+- Admin flow: `/admin/provision-user` endpoint (albo CLI script) — dodaje usera, wystawia Client Secret, ustawia jego Garmin credentials
+- Storage abstract: `TokenStore` interface (Fly volume dla A1, Turso dla A2)
+
+### Prep hooks do zrobienia teraz (opcjonalnie — ~15 min)
+1. Wydzielić `TokenStore` abstraction (dziś: FileTokenStore, jutro: TursoTokenStore)
+2. Dodać `subject` do access_token przy issue (już jest w AccessToken model, tylko nie ustawiamy)
+3. `_get_client()` przyjmuje `subject` (dziś ignoruje, jutro dispatch per-tenant)
+
+### Ryzyka
+- Kompromitacja jednego usera = wektor eskalacji (RCE w garminconnect → dostęp do wszystkich tokenów) — mitigate: osobne procesy per user, sandbox
+- Rate limity Garmina na jedno source IP (my łączymy dla wszystkich) — Fly ma tylko 1 outbound IP per machine, więc load od wielu userów → 1 IP → potencjalny throttling
+- Backupy: jeden Turso incident = utrata tokenów wszystkich userów; per-user encryption at rest
+
+---
+
+## 🎯 Faza 20 — Streamlit: "🧘 Dziś do zrobienia" + streak tracking (habit formation)
+
+**Kiedy:** ASAP — dziś dodałem 14 dni prehabu (27.07-9.08) do DB, ale user nie ma sposobu ich zobaczyć bez zaglądania w SQL. Bez wizualizacji nie wyrobi nawyku.
+
+**Trigger:** 26.07 user zapytał "jak wyrobić nawyk ćwiczeń w domu" — brakuje widocznej codziennej listy.
+
+### Cel
+Codzienne 6-punktowe prehab checkboxy widoczne od razu po otwarciu dashboardu. 3-sekundowy check "co mam dziś do odhaczenia".
+
+### UX
+
+**Na górze strony głównej dashboardu — sekcja "🧘 Dziś (mobility/prehab)":**
+- Query: `SELECT * FROM planned_workout_components WHERE planned_workout_id IN (SELECT id FROM planned_workouts WHERE date=today AND type_key='mobility')`
+- 6 checkboxów jeden pod drugim (foam, ankle, clam, monster, TKE, bridge)
+- Każdy checkbox: `st.checkbox(label, value=(status=='done'))` — po zaznaczeniu wywołuje `mark_component_status(id, 'done')`
+- Progress ring pod checkboxami: "4/6 zrobione" + kolor (czerwony<3, żółty 3-5, zielony 6)
+- **Streak counter** pod tym: "🔥 12 dni z rzędu" — liczy consecutive days gdzie wszystkie 6 komponentów mają status='done'
+
+### Streak algorithm
+```python
+def prehab_streak(conn) -> int:
+    """Liczba dni z rzędu do dziś gdzie wszystkie mobility components = done."""
+    day = date.today()
+    streak = 0
+    while True:
+        planned = conn.execute("""
+            SELECT p.id FROM planned_workouts p
+             JOIN workout_types t ON t.id=p.type_id
+            WHERE p.date=? AND t.key='mobility'
+        """, (day.isoformat(),)).fetchone()
+        if not planned: break
+        components = conn.execute("""
+            SELECT status_id FROM planned_workout_components
+             WHERE planned_workout_id=?
+        """, (planned[0],)).fetchall()
+        if not components: break
+        done_id = conn.execute("SELECT id FROM workout_statuses WHERE key='done'").fetchone()[0]
+        if not all(c[0] == done_id for c in components): break
+        streak += 1
+        day -= timedelta(days=1)
+    return streak
+```
+
+### Implementacja
+- Nowa sekcja w `dashboard.py` — funkcja `render_today_habits(conn)` w części głównej strony
+- Layout: full-width u góry, przed wszystkim innym
+- Auto-refresh na `st.rerun()` po każdym checkboxie (żeby ring/streak się aktualizowały)
+- Wywołuje `api.planned.mark_component_status(id, 'done')` — istnieje już w projekcie
+
+### Dodatkowo — po ukończeniu wszystkich 6:
+- Konfetti animation (`st.balloons()`) 
+- Toast "🎉 Prehab done! Streak: X dni"
+- Opcjonalnie: auto-add note z `api.notes.add(category='reminder', content='Prehab X/X done')` dla śladu w Rozkminach
+
+### Docelowo (poza MVP)
+- Telegram push notification o 19:00 jeśli 0/6 dziś ("hej, jeszcze nie kliknąłeś prehabu")
+- Widget "ostatnie 30 dni" (heatmap kalendarz — jak GitHub contribution graph)
+- Weekly review: "prehab compliance 84% w tym tygodniu"
+
+### Ryzyka
+- Brak przypomnienia = user zapomni. Bez notification (Telegram bot Faza 12) tylko sam otwarcie dashboardu jest kotwicą.
+- Wewnętrzny konflikt: user może "cheat" checkbox bez zrobienia. Odpowiedzialność sam(a) — nie kontrolujemy fizycznie.
+
+**How to apply:** zacznij od render_today_habits(conn) w dashboardzie (~50 linii). Streak counter to drugi etap (~30 linii). Notyfikacje później.
+
+---
+
+## 🎯 Faza 19 — Refactor SQL w garmin-mcp: inline → .sql files
+
+**Kiedy:** za ~2 tygodnie albo jak dodamy >20 tools do Turso w MCP. Dziś (14 tools) inline działa i nie warto.
+
+**Motywacja:** user zauważył 26.07 że SQL wpisany inline w Python w `~/.mcp-servers/garmin-oauth/server.py` to zapach kodu:
+- Brak syntax highlightu
+- Trudno review
+- Zmieszanie z logiką Pythonową
+- Duplikacja z `db/queries/*.sql` w głównym projekcie
+
+**NIE ORM** (anti-goal w projekcie, Bartek świadomie wybrał aiosql/Dapper-style).
+
+**Ścieżka (Opcja C — reuse):**
+1. Docker `COPY ../running/db/queries /app/queries` (jak DB folder dołączymy do image)
+2. `aiosql.from_path("/app/queries", driver_adapter="sqlite3")` — sprawdź czy libsql.Connection przechodzi jako sqlite3 (mostly compat, może być OK)
+3. Jeśli aiosql marudzi na libsql — fallback: napisz mikro-loader (~30 lines):
+   ```python
+   def load_queries(dir): # parse -- name: X comments, return dict
+   ```
+4. Zamień inline SQL w server.py na `queries.plan.week_plan(conn, week_start=ws)`
+5. Testy — istniejące tools działają identycznie
+
+**Alternatywa (Opcja A — osobno):** `.sql` files tylko w garmin-mcp (nie reuse z projektu). Prostsze deploy-owo (jeden repo), ale duplikacja SQL. Wolimy Opcję C dla single source of truth.
+
+**How to apply:** zrób jak inline URL-i w tools zaczną liczyć >20 lub gdy user zmienia SQL częściej niż raz na tydzień.
 
 ---
 

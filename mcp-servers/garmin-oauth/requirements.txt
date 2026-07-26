@@ -1,0 +1,7 @@
+garminconnect==0.3.2
+mcp[cli]>=1.0
+keyring>=25.0
+truststore>=0.9
+uvicorn>=0.30
+starlette>=0.37
+libsql==0.1.11

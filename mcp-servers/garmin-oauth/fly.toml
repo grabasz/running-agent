@@ -1,0 +1,41 @@
+# fly.toml app configuration file generated for garmin-mcp-grabb on 2026-07-25T11:37:16+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'garmin-mcp-grabb'
+primary_region = 'ams'
+
+[build]
+[env]
+  PORT = '8000'
+  TOKEN_DIR = '/data/garminconnect'
+
+[[mounts]]
+  source = 'garmin_tokens'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 25
+    soft_limit = 20
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'get'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256
