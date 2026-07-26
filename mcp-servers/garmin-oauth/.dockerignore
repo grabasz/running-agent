@@ -1,0 +1,11 @@
+__pycache__
+*.pyc
+.venv
+.env
+test_login.py
+setup_credentials.py
+Dockerfile
+.dockerignore
+fly.toml
+README.md
+*.log

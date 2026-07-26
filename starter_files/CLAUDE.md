@@ -40,14 +40,17 @@ Cotygodniowy bilans (niedziela) → **skill `/weekly-review`** (można też cron
 Jeśli chcesz coś poprawić w tych plikach — edytuj DB i puść regen, NIE edytuj markdownów ręcznie (nadpiszą się przy następnym sync).
 
 ## 🛠️ Dostępne MCP
-- **Garmin Connect** ⭐ (40+ tools) — `list-activities`, `get-activity-splits`, `get-daily-heart-rate`, `get-sleep`, `get-body-battery`, `get-hrv`, `get-training-readiness`, `get-personal-records`, `get-vo2max`, `get-weight`, `get-fitness-stats`, `get-user-profile`, `get-power-zones`, ...
-- **Playwright** — backend dla Garmin auth (`browser_navigate`, `browser_evaluate`); używasz pośrednio przez `garmin-login`
+- **Garmin Connect** ⭐ (36 tools, OAuth-based) — `list-activities`, `get-activity-splits`, `get-daily-heart-rate`, `get-sleep`, `get-body-battery`, `get-hrv`, `get-training-readiness`, `get-personal-records`, `get-vo2max`, `get-weight`, `get-fitness-stats`, `get-user-profile`, `list-workouts`, `create-workout`, `schedule-workout`, ...
+- **Garmin Connect (fallback)** — `mcp__garmin-cookies__*` — stary @etweisberg cookies-based MCP, jako awaryjna ścieżka gdy nowy OAuth padnie
+- **Playwright** — backend dla `garmin-cookies` fallback auth (`browser_navigate`, `browser_evaluate`)
 - **Strava** — fallback dla użytkowników bez Garmina; aktywności, laps, streams, segmenty
 - **Weather (Open-Meteo)** — prognoza, weryfikacja daty (`current.time`)
 - **Filesystem** — ten katalog
 - **Memory** — wiedza długoterminowa (knowledge graph)
 
-⚠️ **Garmin session expire**: token cookie wygasa po kilku godzinach. Gdy `mcp__garmin__check-session` zwraca błąd lub `list-activities` daje 401 → wywołaj `garmin-login` (flow przez Playwright + user wpisuje hasło w oknie).
+⚠️ **Garmin OAuth wygasa raz na ~rok** (OAuth1 token). Gdy `mcp__garmin__check-session` zwraca error → user uruchamia w PowerShellu: `python C:\Users\grabb\.mcp-servers\garmin-oauth\test_login.py` (poda kod MFA, tokeny się zapiszą, dalej działa rok). OAuth2 refresh silent — bez interakcji do wygaśnięcia OAuth1.
+
+⚠️ **Fallback do cookies**: jeśli nowy Garmin MCP OAuth pada (np. Cloudflare, endpoint zmiana) → używaj `mcp__garmin-cookies__*` zamiast `mcp__garmin__*` + wywołaj skill `garmin-refresh` żeby odświeżyć cookies przez Playwright. Ostatecznie: przywróć backup `.mcp.json.pre-oauth.backup`.
 
 ## 📊 Baza danych
 
