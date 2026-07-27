@@ -7,7 +7,8 @@
 #   fly deploy
 
 app = "running-agent-bot"
-primary_region = "waw"   # Warsaw — najblizej Krakowa
+# Adjust to the Fly.io region closest to you: https://fly.io/docs/reference/regions/
+primary_region = "waw"
 
 [build]
 

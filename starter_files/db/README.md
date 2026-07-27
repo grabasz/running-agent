@@ -18,7 +18,6 @@ db/
 │   └── stats.sql      #   counts (sanity)
 ├── init_db.py         # tworzy/resetuje data.db
 ├── api.py             # thin wrapper aiosql + connection helper
-├── migrate.py         # jednorazowy import z .md
 ├── smoke_test.py      # sanity check — 10 zapytań
 ├── requirements.txt   # aiosql>=15.0
 ├── data.db            # ⚠️ git-ignored
@@ -66,21 +65,20 @@ Suffixy aiosql w nazwach queries:
 ## Quickstart
 
 ```powershell
-# (raz) inicjalizacja + migracja
+# (raz) inicjalizacja pustej DB
 cd db
 python init_db.py
-python migrate.py          # załaduj istniejące .md
-python smoke_test.py       # sprawdź czy dane są
+python smoke_test.py       # sprawdź czy schema się zbudowała
 
-# reset i ponowna migracja (przy zmianach schematu/migratora)
-python migrate.py --reset
+# opcjonalny seed przykładowego tygodnia:
+python seed_current_week.py
 ```
 
 ## Użycie z innego skryptu
 
 ```python
-import sys
-sys.path.insert(0, r"C:\Users\grabb\Documents\running\db")
+import sys, os
+sys.path.insert(0, os.path.join(os.getcwd(), "db"))
 import api
 
 with api.connect() as conn:

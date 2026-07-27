@@ -1,0 +1,50 @@
+MIT License
+
+Copyright (c) 2026 running-agent contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+ADDITIONAL DISCLAIMER (informational, not a modification of the MIT terms above):
+
+This project is intended for SELF-HOSTED, PERSONAL USE. Each user is
+individually responsible for:
+
+  1. Complying with Garmin Connect, Strava, Turso, Fly.io, Telegram, Anthropic,
+     OpenAI and any other third-party service Terms of Service they choose to
+     integrate. This project neither endorses nor authorises the use of any
+     third-party API — you must independently verify permitted usage.
+
+  2. Securing their own credentials (Garmin email/password, OAuth tokens, API
+     keys, Telegram bot tokens, Turso auth tokens, etc.). Do not commit
+     secrets to any repository, public or private.
+
+  3. Managing personal or health-related data collected by wearable devices.
+     No warranty is made regarding data accuracy, retention, or lawful
+     processing under GDPR / HIPAA / any other regulation.
+
+  4. Any training recommendations produced by the software or the LLMs it
+     drives. This is NOT medical advice. Consult qualified professionals for
+     injury, illness, or training decisions with material health consequences.
+
+The authors and contributors run their own personal instances only. There is
+no hosted service. Do not send credentials to the authors and do not report
+security issues that arise from running an instance of this software against
+services whose Terms of Service you have not verified for yourself.

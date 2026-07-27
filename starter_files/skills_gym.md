@@ -13,8 +13,8 @@ Garmin provides an official library of **47 categories and ~1500 exercises** at 
 **ALWAYS parse this file** before writing any `category` or `exerciseName`. Importer rejects file with `{message: "Invalid category", error: "BadRequestException"}` if values don't match.
 
 ```python
-import json
-with open(r"C:\Users\grabb\Documents\running\garmin_workouts\templates\Exercises.json") as f:
+import json, os
+with open(os.path.join(os.getcwd(), "garmin_workouts", "templates", "Exercises.json")) as f:
     data = json.load(f)
 for cat_name, cat_data in data["categories"].items():
     for ex_name in cat_data["exercises"].keys():

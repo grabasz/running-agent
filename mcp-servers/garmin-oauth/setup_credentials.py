@@ -1,11 +1,19 @@
 """One-time interactive script to save Garmin Connect email + password
-to Windows Credential Manager (via keyring). Run in PowerShell:
+to a local secret store. Run from this folder:
 
-    python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\setup_credentials.py
+    python setup_credentials.py
 
-The password is DPAPI-encrypted by Windows. Nothing lands in plaintext files.
+On Windows the password is DPAPI-encrypted by Credential Manager (via keyring).
+On macOS keyring uses the Keychain, on Linux it uses SecretService if available.
+Nothing is written in plaintext by this script.
+
+If you prefer to keep credentials in an .env file for a headless/server
+install, set GARMIN_EMAIL + GARMIN_PASSWORD in the environment instead of
+running this script — server.py reads env vars as a fallback.
 """
+import os
 from getpass import getpass
+from pathlib import Path
 import sys
 
 try:
@@ -14,40 +22,43 @@ except ImportError:
     print("ERROR: keyring not installed. Run: pip install keyring", file=sys.stderr)
     sys.exit(1)
 
-SERVICE = "garmin-mcp"
-DEFAULT_EMAIL = "grabbartek@gmail.com"
+SERVICE = os.environ.get("GARMIN_KEYRING_SERVICE", "garmin-mcp")
 
 
 def main() -> int:
-    print("=== Garmin MCP: setup credentials ===")
-    print("Zapisuje email + haslo do Windows Credential Manager.")
+    print(f"=== Garmin MCP: setup credentials (service='{SERVICE}') ===")
+    print("Saves Garmin Connect email + password to your OS secret store via keyring.")
     print()
 
     current_email = keyring.get_password(SERVICE, "email")
     if current_email:
-        print(f"Aktualny email: {current_email}")
-        keep = input("Zostawic ten email? [Y/n]: ").strip().lower()
-        if keep in ("", "y", "yes", "t", "tak"):
+        print(f"Current email: {current_email}")
+        keep = input("Keep this email? [Y/n]: ").strip().lower()
+        if keep in ("", "y", "yes"):
             email = current_email
         else:
-            email = input(f"Nowy email [{DEFAULT_EMAIL}]: ").strip() or DEFAULT_EMAIL
+            email = input("New email: ").strip()
     else:
-        email = input(f"Email [{DEFAULT_EMAIL}]: ").strip() or DEFAULT_EMAIL
+        email = input("Garmin Connect email: ").strip()
 
-    password = getpass("Haslo (nie widoczne): ")
+    if not email:
+        print("Empty email. Abort.", file=sys.stderr)
+        return 1
+
+    password = getpass("Password (hidden): ")
     if not password:
-        print("Bledne haslo (puste). Abort.", file=sys.stderr)
+        print("Empty password. Abort.", file=sys.stderr)
         return 1
 
     keyring.set_password(SERVICE, "email", email)
     keyring.set_password(SERVICE, "password", password)
 
     print()
-    print(f"OK. Email zapisany dla service='{SERVICE}'.")
-    print(f"Haslo zapisane (DPAPI-encrypted w Windows Credential Manager).")
+    print(f"OK. Email saved for service='{SERVICE}'.")
+    print("Password saved to your OS secret store (DPAPI/Keychain/SecretService).")
     print()
-    print("Nastepny krok:")
-    print("  python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\test_login.py")
+    print("Next step: complete OAuth login (handles MFA if enabled on your account):")
+    print(f"  python {Path(__file__).with_name('test_login.py').name}")
     return 0
 
 

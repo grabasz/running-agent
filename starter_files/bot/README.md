@@ -10,7 +10,7 @@ notatki, taski, cele tygodnia, body_state log. Pisze BEZPOSREDNIO do Turso
 - `/today` — plan na dzis
 - `/tomorrow` — plan na jutro
 - `/week` — caly biezacy tydzien
-- `/schedule_week [long_km] [next]` — utworz scaffold (Kuba Piech Pn, Lazy Wt/Cz/Nd, Pychowice Sr, REST Pt, Long Sob)
+- `/schedule_week [long_km] [next]` — utworz scaffold tygodnia (customize the template in `handlers/plan.py::_SCAFFOLD` or via `weekly_template.json`)
 
 **Historia**
 - `/lastrun` — ostatni bieg (pace/HR/GCT/kadencja)
@@ -55,9 +55,10 @@ fly auth login                    # jednorazowo
 fly apps create running-agent-bot # jednorazowo
 fly secrets set \
     TELEGRAM_BOT_TOKEN=... \
-    TURSO_DATABASE_URL=libsql://running-graboskov.aws-eu-west-1.turso.io \
+    TURSO_DATABASE_URL=libsql://YOUR-DB-NAME.turso.io \
     TURSO_AUTH_TOKEN=... \
-    ALLOWED_USER_IDS=123456789
+    ALLOWED_USER_IDS=123456789 \
+    BOT_NAME="Your Running Assistant"
 fly deploy
 ```
 

@@ -17,6 +17,9 @@ ALLOWED_USER_IDS: set[int] = {int(x) for x in _ids.split(",") if x.isdigit()}
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "").strip()
 TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
 
+# Display name shown in /start, /help and the bot's own greeting message.
+BOT_NAME = os.environ.get("BOT_NAME", "Running Assistant").strip() or "Running Assistant"
+
 
 def validate() -> list[str]:
     """Return list of missing/invalid env vars (empty = all good)."""

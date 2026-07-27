@@ -37,6 +37,9 @@ starter_files/db/.env
 # Bot secrets — TELEGRAM_BOT_TOKEN + Turso credentials
 starter_files/bot/.env
 
+# User's actual weekly template (ship only the *.example.json)
+starter_files/bot/weekly_template.json
+
 # Python bytecode
 __pycache__/
 *.pyc

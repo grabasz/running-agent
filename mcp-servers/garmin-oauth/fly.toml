@@ -1,9 +1,18 @@
-# fly.toml app configuration file generated for garmin-mcp-grabb on 2026-07-25T11:37:16+02:00
+# fly.toml — remote Garmin MCP server on Fly.io.
 #
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+# BEFORE DEPLOYING:
+#   1. Change `app` below to a globally unique name of your choice
+#      (e.g. garmin-mcp-YOURNAME).
+#   2. `flyctl apps create <name>` — reserves that app.
+#   3. Optionally change `primary_region` to the region closest to you:
+#      https://fly.io/docs/reference/regions/
+#   4. `flyctl secrets set AUTH_TOKEN=... GARMIN_TOKENS_JSON=... OAUTH_CLIENT_ID=... OAUTH_CLIENT_SECRET=...`
+#      (see README.md for the full list of required secrets).
+#   5. `flyctl deploy --remote-only`.
 #
+# See https://fly.io/docs/reference/configuration/ for details.
 
-app = 'garmin-mcp-grabb'
+app = 'garmin-mcp-CHANGE-ME'
 primary_region = 'ams'
 
 [build]

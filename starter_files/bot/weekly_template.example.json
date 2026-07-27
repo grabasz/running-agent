@@ -1,0 +1,65 @@
+[
+  {
+    "day": 0,
+    "type_key": "easy",
+    "title": "🏃 Easy {km}km @ conversational pace",
+    "distance_km": 6.0,
+    "pace_sec_per_km": 390,
+    "hr_max": 145,
+    "notes": "Warm up 10min, then steady."
+  },
+  {
+    "day": 1,
+    "type_key": "easy",
+    "title": "🏃 Easy {km}km + light strides at the end",
+    "distance_km": 5.0,
+    "pace_sec_per_km": 390,
+    "hr_max": 145,
+    "notes": "4x100m strides after the run — form, not speed."
+  },
+  {
+    "day": 2,
+    "type_key": "tempo",
+    "title": "🏃 Tempo — 2km warm + 4km @ T + 2km cool",
+    "distance_km": 8.0,
+    "pace_sec_per_km": 265,
+    "hr_max": 165,
+    "notes": "Tempo effort should feel comfortably hard, not race pace."
+  },
+  {
+    "day": 3,
+    "type_key": "easy",
+    "title": "🏃 Easy {km}km + 💪 Strength session",
+    "distance_km": 5.0,
+    "pace_sec_per_km": 390,
+    "hr_max": 145,
+    "notes": "Recovery pace run + full-body lifts in the evening."
+  },
+  {
+    "day": 4,
+    "type_key": "rest",
+    "title": "🛑 REST + mobility 20-30min",
+    "distance_km": null,
+    "pace_sec_per_km": null,
+    "hr_max": null,
+    "notes": "Foam roll + hip mobility. Prepare the legs for the long run."
+  },
+  {
+    "day": 5,
+    "type_key": "long",
+    "title": "🏃 Long run {km_long}km — steady effort",
+    "distance_km": null,
+    "pace_sec_per_km": 380,
+    "hr_max": 152,
+    "notes": "Fuel + hydrate. Last 20% slightly faster if legs feel good."
+  },
+  {
+    "day": 6,
+    "type_key": "easy",
+    "title": "🏃 Easy {km}km recovery (or REST if fatigued)",
+    "distance_km": 5.0,
+    "pace_sec_per_km": 400,
+    "hr_max": 140,
+    "notes": "Listen to the body — swap for REST if soreness > 2/10."
+  }
+]

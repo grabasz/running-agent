@@ -44,9 +44,11 @@ if os.getenv("TURSO_DATABASE_URL") and not os.getenv("RUNNING_DB_PATH"):
 
 import api  # type: ignore
 
+DASHBOARD_TITLE = os.getenv("DASHBOARD_TITLE", "Running Dashboard")
+
 # Must be the FIRST Streamlit command — before the password gate renders anything.
 st.set_page_config(
-    page_title="Bartek Running",
+    page_title=DASHBOARD_TITLE,
     page_icon="🏃",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -85,7 +87,7 @@ def _check_password() -> bool:
     if st.session_state.get("auth_ok"):
         return True
 
-    st.title("🔒 Bartek Running")
+    st.title(f"🔒 {DASHBOARD_TITLE}")
     pw = st.text_input("Hasło", type="password", key="pw_input")
     if st.button("Zaloguj"):
         if pw == expected:
