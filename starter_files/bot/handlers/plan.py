@@ -103,35 +103,58 @@ async def cmd_week(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ============================================================
-# /schedule_week — scaffold wg stalego social calendarza
+# /schedule_week — scaffold according to your usual weekly rhythm
 # ============================================================
+#
+# Customize this template to your own week. It is loaded from
+# `bot/weekly_template.json` if that file exists, otherwise the generic
+# fallback below is used. Fields:
+#   day:        0=Mon, 1=Tue, ..., 6=Sun
+#   type_key:   one of workout_types.key in the DB (e.g. easy/long/tempo/rest)
+#   title:      Telegram-visible title. Use {km} for easy distance, {km_long}
+#               for the /schedule_week [long_km] argument.
+#   distance, pace_sec_per_km, hr_max: targets (nullable)
+#   notes:      free-text
+import json
+from pathlib import Path
 
-# Kalendarz Bartka (z memory: project_weekly_social_runs.md):
-# Pn: Kuba Piech 7-8 km @6:30
-# Wt: Lazy 5 km @6:30
-# Sr: Pychowice RC 5 km @6:30
-# Cz: Lazy 5 km @6:30 + Silownia B wieczorem
-# Pt: REST
-# Sob: Long (parametr)
-# Nd: Lazy 5 km @6:30
-_SCAFFOLD = [
-    # (offset_from_monday, type_key, title, distance, pace_sec, hr_max, notes)
-    (0, "easy", "🏃 Kuba Piech {km}km @6:30 (socjalizacja z miejscowa ludnoscia)",
-     8.0, 390, 145, "Kadencja 172+; jesli DOMS z prehabu, weekend priorytetem"),
-    (1, "easy", "🏃 Lazy 5km @6:30 + prehab W1 pre-run",
-     5.0, 390, 145, "Aktywacja glute medius pre-run"),
-    (2, "easy", "🏃 Pychowice RC 5km @6:30 (Twoja grupa) + prehab W1",
-     5.0, 390, 145, "Prowadzisz grupe; kadencja alarm 170+"),
-    (3, "easy", "🏃 Lazy 5km @6:30 rano + 💪 Silownia B wieczorem",
-     5.0, 390, 145, "Rano bieg lazy; wieczorem Silownia B (upper+core)"),
-    (4, "rest", "🛑 REST + mobility 30min", None, None, None,
-     "Przygotowanie do longa; foam roll IT band + piriformis"),
-    (5, "long", "🏃 Long {km_long}km + pelny protokol pre+post",
+_DEFAULT_SCAFFOLD = [
+    # (offset_from_monday, type_key, title, distance_km, pace_sec_per_km, hr_max, notes)
+    (0, "easy", "🏃 Easy {km}km @ conversational pace",
+     6.0, 390, 145, "Warm up 10min, then steady."),
+    (1, "easy", "🏃 Easy {km}km + light strides at the end",
+     5.0, 390, 145, "4x100m strides after the run — form, not speed."),
+    (2, "tempo", "🏃 Tempo — 2km warm + 4km @ T + 2km cool",
+     8.0, 265, 165, "Tempo effort should feel comfortably hard, not race pace."),
+    (3, "easy", "🏃 Easy {km}km + 💪 Strength session",
+     5.0, 390, 145, "Recovery pace run + full-body lifts in the evening."),
+    (4, "rest", "🛑 REST + mobility 20-30min", None, None, None,
+     "Foam roll + hip mobility. Prepare the legs for the long run."),
+    (5, "long", "🏃 Long run {km_long}km — steady effort",
      None, 380, 152,
-     "PRE: pistolet + prehab W1. POST: rolowanie 20min. Kadencja 170+ od km 8"),
-    (6, "easy", "🏃 Lazy 5km @6:30 super-recovery (LUB REST jesli kolano)",
-     5.0, 390, 140, "Slucha kolana. Ból >=2/10 rano -> REST"),
+     "Fuel + hydrate. Last 20% slightly faster if legs feel good."),
+    (6, "easy", "🏃 Easy {km}km recovery (or REST if fatigued)",
+     5.0, 400, 140, "Listen to the body — swap for REST if soreness > 2/10."),
 ]
+
+
+def _load_scaffold():
+    tpl = Path(__file__).resolve().parent.parent / "weekly_template.json"
+    if not tpl.exists():
+        return _DEFAULT_SCAFFOLD
+    try:
+        data = json.loads(tpl.read_text(encoding="utf-8"))
+        return [
+            (d["day"], d["type_key"], d["title"],
+             d.get("distance_km"), d.get("pace_sec_per_km"), d.get("hr_max"),
+             d.get("notes", ""))
+            for d in data
+        ]
+    except Exception:
+        return _DEFAULT_SCAFFOLD
+
+
+_SCAFFOLD = _load_scaffold()
 
 
 async def cmd_schedule_week(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

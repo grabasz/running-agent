@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS races (
     strategy            TEXT,
     notes               TEXT,
     run_id              INTEGER REFERENCES runs(id),  -- link to Strava activity
-    -- Dedup: one race per (date, name) — can't add Białystok 10.05 twice
+    -- Dedup: one race per (date, name) — protects against re-imports
     UNIQUE(date, name)
 );
 
@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS vdot_history (
     date        TEXT NOT NULL UNIQUE,           -- one VDOT entry per date (overwrite if re-test same day)
     vdot        INTEGER NOT NULL,
     t_pace_sec  INTEGER,                        -- seconds per km
-    source      TEXT,                           -- "HM Bialystok 1:39:54" etc
+    source      TEXT,                           -- e.g. "HM race", "5K time trial", "field test"
     notes       TEXT
 );
 

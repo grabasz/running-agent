@@ -37,18 +37,18 @@ Repo jest już na githubie (`D:\git\running-agent\running-agent`). Upewnij się,
 - **Repository**: `<twój-user>/running-agent`
 - **Branch**: `main`
 - **Main file path**: `starter_files/dashboard.py` (jeśli framework jest w starter_files; jeśli ten plik kopiujesz do roota repo — wskaz `dashboard.py`)
-- **App URL**: dowolny subdomain `bartek-running.streamlit.app`
+- **App URL**: dowolny subdomain, np. `your-running.streamlit.app`
 
 ### 4. Secrets (TOML)
 
 W ustawieniach app → **Secrets** wklej:
 
 ```toml
-TURSO_DATABASE_URL = "libsql://running-graboskov.aws-eu-west-1.turso.io"
+TURSO_DATABASE_URL = "libsql://YOUR-DB-NAME.turso.io"
 TURSO_AUTH_TOKEN   = "<TOKEN_Z_db/.env>"
 ```
 
-Token bierzesz z `db/.env` (lub generujesz nowy bezterminowy: `turso db tokens create running --expiration none`).
+Token bierzesz z `db/.env` (lub generujesz nowy bezterminowy: `turso db tokens create YOUR-DB-NAME --expiration none`).
 
 ### 5. Deploy
 

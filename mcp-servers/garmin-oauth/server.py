@@ -72,37 +72,38 @@ def _seed_tokens_from_env() -> None:
 
 mcp = FastMCP(
     "personal-training",
-    instructions="""Personal training assistant MCP for Bartek — runner (VDOT ~55, target sub-1:35 HM Gniezno 20.09).
-Two domains: GARMIN (device + external service) and DB (Turso — source of truth for training plan + history).
+    instructions="""Personal running-training assistant MCP. Two domains:
+- GARMIN: device + Garmin Connect service (activities, splits, sleep, HRV, etc.)
+- DB:     local Turso/SQLite — source of truth for the training plan and history.
 
 DECISION RULES:
-- "co ma zaplanowane / plan tygodnia / na jutro"   → DB: db-planned-for-date, db-week-plan
-- "ostatni bieg / splity / jak poszło"             → GARMIN: get-last-run (server-side filter — DO NOT use list-activities + client filter)
-- "aktualny VDOT / tempa treningowe"               → DB: db-current-vdot
-- "trend formy / ostatnie tygodnie"                → DB: db-recent-runs, db-weekly-volume, db-recent-gym
-- "kolano / body state / DOMS"                     → DB: db-body-state
-- "PB w dystansie / historia startów"              → DB: db-race-pbs
-- "sen / HRV / body battery / training readiness"  → GARMIN: get-sleep, get-hrv, get-body-battery, get-training-readiness
+- "what's planned / plan this week / tomorrow's workout" -> DB: db-planned-for-date, db-week-plan
+- "last run / splits / how did it go"                    -> GARMIN: get-last-run (server-side filter — do NOT use list-activities + client filter)
+- "current VDOT / training paces"                        -> DB: db-current-vdot
+- "form trend / last few weeks"                          -> DB: db-recent-runs, db-weekly-volume, db-recent-gym
+- "knee / body state / DOMS"                             -> DB: db-body-state
+- "PB at distance / race history"                        -> DB: db-race-pbs
+- "sleep / HRV / body battery / training readiness"      -> GARMIN: get-sleep, get-hrv, get-body-battery, get-training-readiness
 
 PLANNING NEXT WEEK (workflow):
 1. Assess: db-current-vdot + db-recent-runs(days=14) + db-body-state(days=14) + db-weekly-volume(weeks=4)
 2. Read allowed types: db-workout-types
 3. For each day: db-plan-workout(date, type_key, title, target_distance_km, target_pace_sec_per_km, notes)
-4. To reset a week first: db-clear-week(week_start)  — refuses if any status='done'
-5. DO NOT call create-workout / schedule-workout unless user EXPLICITLY wants the workout on the Garmin device
-   (planning DB entry ≠ pushing workout to watch). Ask before pushing.
+4. To reset a week first: db-clear-week(week_start) — refuses if any status='done'
+5. DO NOT call create-workout / schedule-workout unless the user EXPLICITLY wants the workout on the Garmin device
+   (planning DB entry != pushing workout to watch). Ask before pushing.
 
 CREATING GARMIN WORKOUT FROM PLAN:
 1. db-planned-for-date(date) — read what to build
 2. Construct workout JSON per Garmin schema (running or strength)
-3. create-workout(workout=...) → schedule-workout(workoutId, date=...)
+3. create-workout(workout=...) -> schedule-workout(workoutId, date=...)
 
 INVARIANTS:
 - DB planned_workouts = plan (source of truth). Garmin workouts = pushed-to-device (subset).
 - Garmin activities = what was actually done (immutable).
 - Never delete a planned_workout with status='done' — db-delete-planned-workout refuses this.
 - Dates always YYYY-MM-DD. week_start = Monday (ISO).
-- Paces: sec/km (e.g. 6:15/km = 375). VDOT 55 → E 6:00-6:30, M 5:20-5:30, T 4:55-5:05.
+- Paces: sec/km (e.g. 6:15/km = 375). Refer to Jack Daniels' VDOT tables for the user's current pace zones.
 """
 )
 
@@ -144,7 +145,7 @@ def _wrap_401(fn):
                     return _dumps({
                         "status": "error",
                         "message": f"{type(e2).__name__}: {e2}",
-                        "fix": "Run: python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\test_login.py",
+                        "fix": "Re-run the OAuth login flow: python test_login.py from the garmin-oauth folder.",
                     })
             return _dumps({"status": "error", "message": f"{type(e).__name__}: {e}"})
     inner.__signature__ = inspect.signature(fn)
@@ -171,10 +172,10 @@ def check_session() -> str:
 @mcp.tool(name="garmin-login", description="Instructions for OAuth setup (one-time).")
 def garmin_login() -> str:
     return (
-        "Garmin OAuth setup (one-time):\n"
-        "  1. python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\setup_credentials.py\n"
-        "  2. python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\test_login.py\n"
-        "OAuth1 lives ~1 year. Verify with check-session."
+        "Garmin OAuth setup (one-time). Run the two scripts from the garmin-oauth folder:\n"
+        "  1. python setup_credentials.py   # save Garmin email + password to your OS secret store\n"
+        "  2. python test_login.py          # complete OAuth1+OAuth2 (handles MFA)\n"
+        "OAuth1 refresh token lives ~1 year. Verify anytime with check-session."
     )
 
 
@@ -938,7 +939,9 @@ def _run_http(host: str, port: int) -> None:
         print(f"HTTP mode requires extra deps: {e}", file=sys.stderr)
         sys.exit(1)
 
-    fly_app = os.environ.get("FLY_APP_NAME", "garmin-mcp-grabb")
+    # FLY_APP_NAME is set automatically by Fly.io at runtime; fall back to a
+    # generic placeholder when running locally without deploying.
+    fly_app = os.environ.get("FLY_APP_NAME") or "garmin-mcp-local"
     fly_host = f"{fly_app}.fly.dev"
     issuer_url = os.environ.get("OAUTH_ISSUER_URL", f"https://{fly_host}")
 

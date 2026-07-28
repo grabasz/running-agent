@@ -76,7 +76,7 @@ def guarded(handler):
 # /start + /help
 # ============================================================
 
-HELP_TEXT = """<b>Bartek Running bot</b>
+HELP_TEXT = f"""<b>{config.BOT_NAME}</b>
 
 <b>Plan treningu</b>
 /today — plan na dzis

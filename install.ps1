@@ -320,8 +320,8 @@ Write-Host ""
 
 $name      = Read-Host "   Your name"
 $city      = Read-Host "   Your city"
-$lat       = Read-Host "   City latitude (for weather, e.g. 50.0647 for Krakow)"
-$lon       = Read-Host "   City longitude (e.g. 19.9450 for Krakow)"
+$lat       = Read-Host "   City latitude (for weather, e.g. 51.5074 for London)"
+$lon       = Read-Host "   City longitude (e.g. -0.1278 for London)"
 $language  = Read-Host "   Preferred language (English / Polish / other) [English]"
 if (-not $language) { $language = "English" }
 $tempUnit  = Read-Host "   Temperature unit (Celsius / Fahrenheit) [Celsius]"

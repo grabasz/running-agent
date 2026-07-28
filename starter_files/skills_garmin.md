@@ -84,8 +84,8 @@ Polish escape codes (używaj dosłownie w stringach Python, `ensure_ascii=True` 
 Wzorzec (PowerShell) — kopiuj i wklej, zmień tylko `workout = {...}` i nazwę pliku:
 ```powershell
 $py = @'
-import sys
-sys.path.insert(0, r"C:\Users\grabb\Documents\running\garmin_workouts")
+import sys, os
+sys.path.insert(0, os.path.join(os.getcwd(), "garmin_workouts"))
 from make_garmin import save_workout
 
 workout = {

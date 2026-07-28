@@ -1,7 +1,10 @@
-"""Seed planned_workouts table with the current week's plan (29.06–05.07).
+"""Example: seed planned_workouts for a single week.
 
-This was previously in plan_current.md as the '📆 BIEŻĄCY TYDZIEŃ' table.
-After running this, that markdown section can be removed — DB is the source of truth.
+This is a template — edit `WEEK_START` and `PLAN` to reflect your own week,
+then run:  python db/seed_current_week.py
+
+It is idempotent: existing rows for the same week_start are deleted before
+the new plan is inserted.
 """
 import sys
 from pathlib import Path
@@ -10,24 +13,26 @@ sys.path.insert(0, str(Path(__file__).parent))
 import api  # type: ignore
 
 
-WEEK_START = "2026-06-29"  # Monday
+WEEK_START = "2026-01-06"  # Monday — change to your target week
 
-# Each entry: (date, type_key, title, target_distance_km, target_pace_sec/km, target_hr_max, weather_temp, weather_note, notes)
+# Each entry: (date, type_key, title, target_distance_km, target_pace_sec/km,
+#              target_hr_max, weather_temp, weather_note, notes)
+# type_key must exist in workout_types (see schema.sql seed rows).
 PLAN = [
-    ("2026-06-29", "rest",       "REST + foam roll + Codzienny Beton",                   None, None, None, 39, "upal 39C",
-     "Kuba Piech odpuszczony (kolano + upal)"),
-    ("2026-06-30", "easy",       "Easy 5-6 km @6:10 RANO (5-6:00), plasko",              5.5,  370,  145,  35, "upal 35C",
-     "Krotko ze wzgledu na upal"),
-    ("2026-07-01", "strength_b", "Silownia B (upper + core + prehab block)",             None, None, None, 34, "burza 84%",
-     "Bez biegu - upal + burza popoludniowa"),
-    ("2026-07-02", "easy",       "Easy 8 km @6:00 + 4x strides 100m",                    8.0,  360,  145,  25, "ochlodzenie",
-     "Pierwszy chlod - wykorzystaj"),
-    ("2026-07-03", "strength_a", "Silownia A z prehab (BSS @BW, RDL 40kg utrzymaj)",     None, None, None, 23, None,
-     "Monitor kolano"),
-    ("2026-07-04", "long",       "Long 14 km @6:00-6:15, plasko",                        14.0, 370,  150,  24, None,
-     "Pierwszy long Fazy 1"),
-    ("2026-07-05", "rest",       "REST + foam roll + mobility",                          None, None, None, 24, None,
-     "Regeneracja przed Tydz 2"),
+    ("2026-01-06", "easy",       "Easy 6 km @ conversational pace",
+     6.0, 390, 145, None, None, "Warm up 10min, then steady."),
+    ("2026-01-07", "tempo",      "Tempo — 2km warm + 4km @ T + 2km cool",
+     8.0, 265, 165, None, None, "T pace = comfortably hard, not race pace."),
+    ("2026-01-08", "easy",       "Easy 5 km + 4x100m strides",
+     5.0, 390, 145, None, None, "Strides = form work, not sprints."),
+    ("2026-01-09", "strength_a", "Strength A (lower body + core)",
+     None, None, None, None, None, "Squat / RDL / plank progression."),
+    ("2026-01-10", "rest",       "REST + mobility 30min",
+     None, None, None, None, None, "Foam roll, hips, IT band."),
+    ("2026-01-11", "long",       "Long run 14 km — steady effort",
+     14.0, 380, 152, None, None, "Fuel + hydrate. Last 20% slightly faster if legs OK."),
+    ("2026-01-12", "easy",       "Easy 5 km recovery (or REST if fatigued)",
+     5.0, 400, 140, None, None, "Listen to the body."),
 ]
 
 
