@@ -5,6 +5,25 @@
 PRAGMA foreign_keys = ON;
 
 -- ============================================
+-- USERS (multi-tenant foundation)
+-- ============================================
+--
+-- Baseline is single-user: id=1 is seeded as 'default'. All personalised
+-- tables carry `user_id` with DEFAULT 1 for back-compat with pre-multitenant
+-- rows. Add more users by INSERTing rows here and passing user_id explicitly
+-- in queries.
+CREATE TABLE IF NOT EXISTS users (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT    NOT NULL UNIQUE,
+    display_name      TEXT,
+    garmin_token_dir  TEXT,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT OR IGNORE INTO users (id, name, display_name, garmin_token_dir)
+VALUES (1, 'default', 'Default User', 'default');
+
+-- ============================================
 -- GYM
 -- ============================================
 
@@ -190,6 +209,7 @@ CREATE TABLE IF NOT EXISTS body_weight (
 
 CREATE TABLE IF NOT EXISTS body_state (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     date        TEXT NOT NULL,                  -- YYYY-MM-DD
     location    TEXT NOT NULL,                  -- "kolano_prawe", "lydka_prawa", "krzyz", "posladki_doms", etc
     pain_0_10   INTEGER,                        -- 0-10 (null if just DOMS flag)
@@ -199,6 +219,7 @@ CREATE TABLE IF NOT EXISTS body_state (
 );
 
 CREATE INDEX IF NOT EXISTS idx_body_state_date ON body_state(date);
+CREATE INDEX IF NOT EXISTS idx_body_state_user_date ON body_state(user_id, date);
 
 -- ============================================
 -- PLANNED WORKOUTS (training plan, mobile-friendly)
@@ -228,6 +249,7 @@ CREATE TABLE IF NOT EXISTS workout_types (
 -- Main table: planned workouts (one row per planned session)
 CREATE TABLE IF NOT EXISTS planned_workouts (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id                 INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     date                    TEXT NOT NULL,                            -- YYYY-MM-DD
     week_start              TEXT NOT NULL,                            -- Monday-anchored YYYY-MM-DD
 
@@ -263,6 +285,7 @@ CREATE TABLE IF NOT EXISTS planned_workouts (
 CREATE INDEX IF NOT EXISTS idx_planned_date ON planned_workouts(date);
 CREATE INDEX IF NOT EXISTS idx_planned_week ON planned_workouts(week_start);
 CREATE INDEX IF NOT EXISTS idx_planned_status ON planned_workouts(status_id);
+CREATE INDEX IF NOT EXISTS idx_planned_workouts_user_date ON planned_workouts(user_id, date);
 
 -- Sub-components of a planned workout (per-item odhaczanie).
 -- Monolityczny wpis "REST + foam roll + Codzienny Beton" rozbija się na 3 komponenty
