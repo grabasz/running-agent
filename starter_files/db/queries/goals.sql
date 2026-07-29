@@ -16,6 +16,7 @@ ON CONFLICT(week_start, category) DO UPDATE SET
 SELECT *
   FROM weekly_goals
  WHERE week_start = :week_start
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY category;
 
 

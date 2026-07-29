@@ -44,9 +44,11 @@ if os.getenv("TURSO_DATABASE_URL") and not os.getenv("RUNNING_DB_PATH"):
 
 import api  # type: ignore
 
+# Overridable via env for self-hosted instances (e.g. DASHBOARD_TITLE="Mati Running")
 DASHBOARD_TITLE = os.getenv("DASHBOARD_TITLE", "Running Dashboard")
 
 # Must be the FIRST Streamlit command — before the password gate renders anything.
+# Tytul strony generyczny — password gate jeszcze nie wie kto sie loguje.
 st.set_page_config(
     page_title=DASHBOARD_TITLE,
     page_icon="🏃",
@@ -73,25 +75,59 @@ def _bootstrap_once():
 # Password gate (only enforced when APP_PASSWORD secret is set)
 # ============================================
 
-def _check_password() -> bool:
-    expected = None
+def _get_secret(key: str) -> str | None:
+    """Streamlit secrets albo env var — dashboard hostowany w obu trybach."""
     try:
-        expected = st.secrets.get("APP_PASSWORD")
+        v = st.secrets.get(key)
+        if v:
+            return str(v)
     except Exception:
-        expected = None
-    expected = expected or os.getenv("APP_PASSWORD")
+        pass
+    return os.getenv(key)
 
-    if not expected:
-        return True  # no password configured — open access (local dev)
+
+def _resolve_user(pw: str) -> tuple[int, str] | None:
+    """Mapuj wpisane hasło na (user_id, display_name).
+
+    Konfiguracja przez env vars:
+      USER1_NAME / USER1_PASSWORD → (1, USER1_NAME)
+      USER2_NAME / USER2_PASSWORD → (2, USER2_NAME)
+      APP_PASSWORD (legacy)       → (1, DEFAULT_USER_NAME)
+    """
+    for uid in (1, 2, 3):
+        stored = _get_secret(f"USER{uid}_PASSWORD")
+        if stored and pw == stored:
+            name = _get_secret(f"USER{uid}_NAME") or f"User {uid}"
+            return (uid, name)
+    pw_app = _get_secret("APP_PASSWORD")
+    if pw_app and pw == pw_app:
+        name = _get_secret("USER1_NAME") or _get_secret("DEFAULT_USER_NAME") or "User"
+        return (1, name)
+    return None
+
+
+def _check_password() -> bool:
+    # Local dev: brak hasla w env/secrets => otwarty dostep jako user domyslny (user_id=1).
+    if not any(_get_secret(k) for k in ("USER1_PASSWORD", "USER2_PASSWORD", "USER3_PASSWORD", "APP_PASSWORD")):
+        st.session_state.setdefault("user_id", 1)
+        st.session_state.setdefault("user_name", os.getenv("DEFAULT_USER_NAME", "User"))
+        return True
 
     if st.session_state.get("auth_ok"):
         return True
 
     st.title(f"🔒 {DASHBOARD_TITLE}")
+    st.caption("Wpisz swoje hasło — dostęp zostanie dopasowany automatycznie.")
     pw = st.text_input("Hasło", type="password", key="pw_input")
     if st.button("Zaloguj"):
-        if pw == expected:
+        resolved = _resolve_user(pw)
+        if resolved:
+            uid, uname = resolved
             st.session_state["auth_ok"] = True
+            st.session_state["user_id"] = uid
+            st.session_state["user_name"] = uname
+            # Wyczysc cache poprzedniego usera (jesli ktos sie przelogowal)
+            st.cache_data.clear()
             st.rerun()
         else:
             st.error("Złe hasło.")
@@ -124,23 +160,33 @@ _CLOUD_MODE = _REPLICA is not None
 # DB helpers (cached for speed)
 # ============================================
 
-@st.cache_data(ttl=30)
-def q_today():
-    with api.connect() as conn:
-        return [dict(r) for r in api.planned.today(conn)]
+# USER_ID + USER_NAME wybrane w loginie (session_state).
+# _uid()/USER_ID: pierwszy raz USER_ID init sie po password gate (linia _check_password).
+# Wszystkie q_ funkcje dostaja user_id jako parametr (cache-per-user).
+def _uid() -> int:
+    return int(st.session_state.get("user_id", 1))
+
+USER_ID: int = _uid()
+USER_NAME: str = str(st.session_state.get("user_name", "User"))
 
 
 @st.cache_data(ttl=30)
-def q_upcoming(days=7):
+def q_today(user_id: int):
     with api.connect() as conn:
-        return [dict(r) for r in api.planned.upcoming(conn, days=f"+{days} days", limit=7)]
+        return [dict(r) for r in api.planned.today(conn, user_id=user_id)]
+
+
+@st.cache_data(ttl=30)
+def q_upcoming(user_id: int, days=7):
+    with api.connect() as conn:
+        return [dict(r) for r in api.planned.upcoming(conn, user_id=user_id, days=f"+{days} days", limit=7)]
 
 
 @st.cache_data(ttl=15)
-def q_current_week_with_components():
+def q_current_week_with_components(user_id: int):
     """Zwraca plany bieżącego tygodnia z komponentami zgroupowanymi per planned_id."""
     with api.connect() as conn:
-        week = [dict(r) for r in api.planned.current_week(conn)]
+        week = [dict(r) for r in api.planned.current_week(conn, user_id=user_id)]
         by_planned: dict[int, list[dict]] = {}
         for p in week:
             comps = [dict(c) for c in api.planned.components_for(conn, planned_workout_id=p["id"])]
@@ -168,86 +214,86 @@ def _apply_component_status(component_id: int, planned_id: int, status_key: str,
 
 
 @st.cache_data(ttl=60)
-def q_weekly_volume(weeks=12):
+def q_weekly_volume(user_id: int, weeks=12):
     with api.connect() as conn:
-        rows = [dict(r) for r in api.weekly_volume.recent(conn, weeks=weeks)]
+        rows = [dict(r) for r in api.weekly_volume.recent(conn, user_id=user_id, weeks=weeks)]
     return pd.DataFrame(rows)
 
 
 @st.cache_data(ttl=60)
-def q_runs_recent(limit=30):
+def q_runs_recent(user_id: int, limit=30):
     with api.connect() as conn:
-        return pd.DataFrame([dict(r) for r in api.runs.recent(conn, limit=limit)])
+        return pd.DataFrame([dict(r) for r in api.runs.recent(conn, user_id=user_id, limit=limit)])
 
 
 @st.cache_data(ttl=60)
-def q_runs_with_dynamics(since="-90 days"):
+def q_runs_with_dynamics(user_id: int, since="-90 days"):
     with api.connect() as conn:
-        return pd.DataFrame([dict(r) for r in api.runs.recent_with_dynamics(conn, since=since)])
+        return pd.DataFrame([dict(r) for r in api.runs.recent_with_dynamics(conn, user_id=user_id, since=since)])
 
 
 @st.cache_data(ttl=60)
-def q_gym_sessions(limit=20):
+def q_gym_sessions(user_id: int, limit=20):
     with api.connect() as conn:
-        return [dict(r) for r in api.gym.sessions_recent(conn, limit=limit)]
+        return [dict(r) for r in api.gym.sessions_recent(conn, user_id=user_id, limit=limit)]
 
 
 @st.cache_data(ttl=60)
-def q_exercise_progression(exercise, limit=30):
+def q_exercise_progression(user_id: int, exercise, limit=30):
     with api.connect() as conn:
         return pd.DataFrame([
-            dict(r) for r in api.gym.exercise_progression(conn, exercise=exercise, limit=limit)
+            dict(r) for r in api.gym.exercise_progression(conn, user_id=user_id, exercise=exercise, limit=limit)
         ])
 
 
 @st.cache_data(ttl=60)
-def q_top_exercises(since="2026-01-01"):
+def q_top_exercises(user_id: int, since="2026-01-01"):
     with api.connect() as conn:
         return pd.DataFrame([
-            dict(r) for r in api.gym.top_exercises_by_volume(conn, since=since)
+            dict(r) for r in api.gym.top_exercises_by_volume(conn, user_id=user_id, since=since)
         ])
 
 
 @st.cache_data(ttl=60)
-def q_races_upcoming():
+def q_races_upcoming(user_id: int):
     with api.connect() as conn:
-        return [dict(r) for r in api.races.upcoming(conn)]
+        return [dict(r) for r in api.races.upcoming(conn, user_id=user_id)]
 
 
 @st.cache_data(ttl=60)
-def q_races_history():
+def q_races_history(user_id: int):
     with api.connect() as conn:
-        return [dict(r) for r in api.races.history(conn)]
+        return [dict(r) for r in api.races.history(conn, user_id=user_id)]
 
 
 @st.cache_data(ttl=60)
-def q_vdot_history(limit=10):
+def q_vdot_history(user_id: int, limit=10):
     with api.connect() as conn:
-        return pd.DataFrame([dict(r) for r in api.vdot.history(conn, limit=limit)])
+        return pd.DataFrame([dict(r) for r in api.vdot.history(conn, user_id=user_id, limit=limit)])
 
 
 @st.cache_data(ttl=30)
-def q_body_state(since="-14 days"):
+def q_body_state(user_id: int, since="-14 days"):
     with api.connect() as conn:
-        return [dict(r) for r in api.body.state_recent(conn, since=since)]
+        return [dict(r) for r in api.body.state_recent(conn, user_id=user_id, since=since)]
 
 
 @st.cache_data(ttl=30)
-def q_tasks_all():
+def q_tasks_all(user_id: int):
     with api.connect() as conn:
-        return [dict(r) for r in api.tasks.list_all(conn)]
+        return [dict(r) for r in api.tasks.list_all(conn, user_id=user_id)]
 
 
 @st.cache_data(ttl=30)
-def q_goals_week(week_start):
+def q_goals_week(user_id: int, week_start):
     with api.connect() as conn:
-        return {r["category"]: dict(r) for r in api.goals.for_week(conn, week_start=week_start)}
+        return {r["category"]: dict(r) for r in api.goals.for_week(conn, user_id=user_id, week_start=week_start)}
 
 
 @st.cache_data(ttl=30)
-def q_notes_recent(limit=30):
+def q_notes_recent(user_id: int, limit=30):
     with api.connect() as conn:
-        return [dict(r) for r in api.notes.recent(conn, limit=limit)]
+        return [dict(r) for r in api.notes.recent(conn, user_id=user_id, limit=limit)]
 
 
 # ============================================
@@ -311,10 +357,10 @@ def page_overview():
 
     # --- Top metrics row ---
     # Single volume query (12 weeks) — slice for both metrics-row (top 4) and chart below.
-    vol_df_12 = q_weekly_volume(weeks=12).sort_values("week_start", ascending=False)
-    vdot_hist = q_vdot_history(limit=1)
-    races_hist = q_races_history()
-    races_up = q_races_upcoming()
+    vol_df_12 = q_weekly_volume(weeks=12, user_id=USER_ID).sort_values("week_start", ascending=False)
+    vdot_hist = q_vdot_history(limit=1, user_id=USER_ID)
+    races_hist = q_races_history(user_id=USER_ID)
+    races_up = q_races_upcoming(user_id=USER_ID)
 
     col1, col2, col3, col4, col5 = st.columns(5)
     if not vdot_hist.empty:
@@ -345,7 +391,7 @@ def page_overview():
 
     with left:
         st.subheader("📅 Bieżący tydzień")
-        week, comps_by_pid = q_current_week_with_components()
+        week, comps_by_pid = q_current_week_with_components(user_id=USER_ID)
         if not week:
             st.info(
                 "Brak planu na ten tydzień. "
@@ -421,7 +467,7 @@ def page_overview():
     with right:
         st.subheader("🩺 Stan ciała (14 dni)")
         # Single 30-day query — reuse for table (last 14 dni) + trend chart (30 dni).
-        body_30 = pd.DataFrame(q_body_state(since="-30 days"))
+        body_30 = pd.DataFrame(q_body_state(since="-30 days", user_id=USER_ID))
         if body_30.empty:
             st.info("Brak wpisów body_state.")
         else:
@@ -473,7 +519,7 @@ def page_overview():
 def page_running():
     st.title("🏃 Bieganie")
 
-    runs_df = q_runs_recent(limit=50)
+    runs_df = q_runs_recent(limit=50, user_id=USER_ID)
     if runs_df.empty:
         st.warning("Brak biegów w DB. Wywołaj `/run` z Claude'a żeby zapisać aktualne dane.")
         return
@@ -514,7 +560,7 @@ def page_running():
             st.plotly_chart(fig, use_container_width=True)
 
     # Running dynamics (Garmin only)
-    dyn = q_runs_with_dynamics(since="-90 days")
+    dyn = q_runs_with_dynamics(since="-90 days", user_id=USER_ID)
     if not dyn.empty and dyn["gct_balance_left_pct"].notna().any():
         st.divider()
         st.subheader("🦵 Running dynamics — GCT Balance L/R + kadencja")
@@ -574,7 +620,7 @@ def page_running():
 def page_strength():
     st.title("💪 Siłownia")
 
-    sessions = q_gym_sessions(limit=10)
+    sessions = q_gym_sessions(limit=10, user_id=USER_ID)
     if not sessions:
         st.warning("Brak sesji siłowni w DB. Wywołaj `/silownia` żeby zaimportować z Garmina.")
         return
@@ -588,7 +634,7 @@ def page_strength():
     selected_ex = st.selectbox("Wybierz ćwiczenie", ex_list,
                                 index=ex_list.index("RDL") if "RDL" in ex_list else 0)
 
-    progression = q_exercise_progression(selected_ex, limit=30)
+    progression = q_exercise_progression(selected_ex, limit=30, user_id=USER_ID)
     if not progression.empty:
         col1, col2 = st.columns(2)
 
@@ -621,7 +667,7 @@ def page_strength():
 
     # Top exercises by tonnage
     st.subheader("Top ćwiczenia po tonażu (od 2026-01-01)")
-    top = q_top_exercises(since="2026-01-01")
+    top = q_top_exercises(since="2026-01-01", user_id=USER_ID)
     if not top.empty:
         top_filtered = top[top["volume_kg"] > 0].head(12)
         fig = px.bar(top_filtered, y="exercise", x="volume_kg", orientation="h",
@@ -651,8 +697,8 @@ def page_races():
     st.title("🏆 Wyścigi")
 
     # Upcoming
-    upcoming = q_races_upcoming()
-    history = q_races_history()
+    upcoming = q_races_upcoming(user_id=USER_ID)
+    history = q_races_history(user_id=USER_ID)
 
     col1, col2 = st.columns(2)
 
@@ -690,7 +736,7 @@ def page_races():
 
     # VDOT progression
     st.subheader("📈 Progresja VDOT")
-    vdot_df = q_vdot_history(limit=20)
+    vdot_df = q_vdot_history(limit=20, user_id=USER_ID)
     if not vdot_df.empty:
         vdot_df["date"] = pd.to_datetime(vdot_df["date"])
         vdot_df = vdot_df.sort_values("date")
@@ -854,7 +900,7 @@ def page_life():
 
     # ------- Cele tygodnia -------
     st.header(f"🎯 Cele tygodnia — od pon. {week_start}")
-    goals_map = q_goals_week(week_start)
+    goals_map = q_goals_week(week_start, user_id=USER_ID)
 
     filled_cats = [c for c in LIFE_CATEGORIES if goals_map.get(c)]
     empty_cats = [c for c in LIFE_CATEGORIES if not goals_map.get(c)]
@@ -918,7 +964,7 @@ def page_life():
 
     # ------- Zadania -------
     st.header("📋 Zadania")
-    all_tasks = q_tasks_all()
+    all_tasks = q_tasks_all(user_id=USER_ID)
 
     show_done = st.toggle("Pokaż wykonane", value=False, key="tasks_show_done")
 
@@ -1008,7 +1054,7 @@ def page_life():
         limit = st.number_input("Pokaż ostatnie N", min_value=5, max_value=100,
                                  value=20, step=5, key="notes_limit")
 
-    notes = q_notes_recent(limit=int(limit))
+    notes = q_notes_recent(limit=int(limit, user_id=USER_ID))
     if cat_filter != "wszystkie":
         notes = [n for n in notes if n["category"] == cat_filter]
 
@@ -1058,6 +1104,105 @@ def page_life():
 
 
 # ============================================
+# Page: Nauka (edukacyjna sekcja dla wszystkich — szczegolnie Matiego)
+# ============================================
+
+def page_learning():
+    st.title("🎓 O co chodzi w bieganiu?")
+    st.caption("Twoi trenerzy — Jack Daniels + zdrowy rozsądek. Tu jest po ludzku, bez żargonu.")
+
+    st.markdown("### 🏃‍♂️ 5 typów treningu — co i dlaczego")
+
+    with st.expander("🌿 **Easy** — spokojnie, długo, o rozmowie", expanded=True):
+        st.markdown("""
+**Jak biegać:**  Tak wolno, żebyś mógł spokojnie **gadać pełnymi zdaniami**. Bez zadyszki. Bez patrzenia na zegarek co 100 m.
+
+**Po co:**  Buduje **wytrzymałość podstawową** — Twoje serce staje się mocniejsze, mięśnie uczą się palić tłuszcz zamiast cukru.
+Tego biegania nigdy nie jest za dużo. To fundament wszystkiego innego.
+
+**Typowa dystansa:**  3–10 km, zależy od poziomu.
+**Jak się czuć potem:**  Chcesz jeszcze pobiegać. Nie jesteś zmęczony.
+        """)
+
+    with st.expander("⚡ **Tempo** — komfortowo ciężko"):
+        st.markdown("""
+**Jak biegać:**  Tak szybko, że nie da się gadać pełnymi zdaniami — tylko krótkie słowa. Nie jest "cierpienie", ale też nie "spacer".
+Wyobraź sobie że biegniesz **tempem, którym mógłbyś biec przez godzinę** i tylko pod koniec zaczyna boleć.
+
+**Po co:**  Uczy ciało **jeździć na granicy** — próg mleczanowy. Za tydzień będziesz umiał utrzymać to tempo dłużej.
+
+**Typowa struktura:**  2 km rozgrzewka → 4-6 km tempo → 2 km wychłodzenie.
+**Jak się czuć potem:**  Zadowolony, ale się nachukałeś.
+        """)
+
+    with st.expander("🛣️ **Long** — długo, wolno, bez pośpiechu"):
+        st.markdown("""
+**Jak biegać:**  Jak **Easy**, tylko **dłużej niż zwykle**. Tempo takie samo albo trochę wolniejsze.
+
+**Po co:**  Twoje ciało uczy się być długo w ruchu bez zmęczenia. Kości, ścięgna, mięśnie się wzmacniają. To jest trening który robi z ciebie **biegacza na dystansie**.
+
+**Typowa dystansa:**  10-20+ km (dla dorosłych), 5-8 km dla dzieci.
+**Jak się czuć potem:**  Zmęczony ale spełniony. Wieczorem — spać jak dziecko.
+        """)
+
+    with st.expander("🔥 **Interval** — krótkie ale mocne odcinki"):
+        st.markdown("""
+**Jak biegać:**  **Bardzo szybko przez krótki dystans** (400-1000 m), potem przerwa (trucht lub spacer), potem znowu szybko. Kilka razy.
+Przykład: 6 × 400 m po ~1:30, między nimi 200 m truchtu.
+
+**Po co:**  Uczy ciało biegać **szybko** i **poprawia VO2max** — ile tlenu Twój organizm umie zużyć na minutę. Kluczowe dla szybkości.
+
+**Jak się czuć potem:**  Wykończony, ale krótkotrwale. Dzień odpoczynku obowiązkowy.
+        """)
+
+    with st.expander("💧 **Recovery / Regeneracja** — po ciężkim dniu"):
+        st.markdown("""
+**Jak biegać:**  Jeszcze **wolniej niż Easy**. Praktycznie spacer szybszy. 20-40 minut.
+
+**Po co:**  Ruch pobudza krew, krew zabiera "śmieci" z mięśni (kwas mlekowy, mikrouszkodzenia).
+Po ciężkim treningu następnego dnia jest **lepiej** niż leżeć na kanapie.
+
+**Jak się czuć potem:**  Lżej. Bezruchowe bóle znikają.
+        """)
+
+    st.divider()
+    st.markdown("### 📊 Skala RPE — jak ciężko było?")
+    st.caption("RPE = Rate of Perceived Exertion. Po każdym biegu spytaj sam siebie: **jak bardzo mnie to zmęczyło?**")
+
+    rpe = [
+        ("1-2", "🚶", "**Spacer**. W ogóle nie zauważyłem że biegałem."),
+        ("3-4", "🌿", "**Easy**. Mogłem gadać pełnymi zdaniami. Chcę jeszcze."),
+        ("5-6", "⚡", "**Tempo**. Krótkie słowa. Trochę pot. Umiem to utrzymać 30-60 min."),
+        ("7-8", "🔥", "**Ciężko**. Ledwo słowo. Pot. Chcę żeby już się skończyło."),
+        ("9", "😵", "**Bardzo ciężko**. Nie umiem gadać. Ostatnie 5 minut wyścigu."),
+        ("10", "💀", "**Maksymalne**. Ostatnie 100 m sprintu. Nie da się utrzymać."),
+    ]
+    for score, icon, desc in rpe:
+        st.markdown(f"- **{score}** {icon} — {desc}")
+
+    st.divider()
+    st.markdown("### 🎯 Dlaczego dziś ten trening?")
+    st.caption(f"Twój aktualny plan na dzisiaj (jeśli jest):")
+
+    plan_today = q_today(user_id=USER_ID)
+    if plan_today:
+        for p in plan_today:
+            st.info(f"**{p.get('type_display_pl', p.get('type_key', '?'))}** — {p.get('title', 'brak tytułu')}")
+            if p.get("notes"):
+                st.caption(p["notes"])
+    else:
+        st.caption("Nic zaplanowanego na dziś. Odpoczynek lub decyduje ciało.")
+
+    st.divider()
+    st.markdown("### 🧠 3 zasady od trenera")
+    st.markdown("""
+1. **80% biegów to Easy.** Serio. Jeśli wszystkie biegi cię męczą — biegasz za szybko.
+2. **Nie stawaj coraz ciężej co tydzień.** Ciało potrzebuje czasu żeby się dostosować. Lepiej mniej biegać ale konsekwentnie.
+3. **Ból = zatrzymaj się.** Zmęczenie mięśni to normalne. Ostry ból (kolano, ścięgno) — koniec, nie biegasz przez 2-3 dni.
+    """)
+
+
+# ============================================
 # Sidebar / nav
 # ============================================
 
@@ -1067,10 +1212,11 @@ PAGES = {
     "💪 Siłownia": page_strength,
     "🏆 Wyścigi": page_races,
     "🧠 Rozkminy": page_life,
+    "🎓 Nauka": page_learning,
 }
 
 with st.sidebar:
-    st.title("🏃 Running")
+    st.title(f"🏃 {USER_NAME}")
     page = st.radio("Nawigacja", list(PAGES.keys()), label_visibility="collapsed")
     st.divider()
     if _CLOUD_MODE:
@@ -1082,6 +1228,11 @@ with st.sidebar:
         if _CLOUD_MODE:
             st.cache_resource.clear()
             api.bootstrap_cloud(force=True)
+        st.rerun()
+    if st.button("🚪 Wyloguj"):
+        for k in ("auth_ok", "user_id", "user_name"):
+            st.session_state.pop(k, None)
+        st.cache_data.clear()
         st.rerun()
 
 PAGES[page]()

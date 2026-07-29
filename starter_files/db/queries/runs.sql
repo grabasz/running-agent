@@ -105,12 +105,14 @@ SELECT *
   FROM runs
  WHERE date = :date
    AND ABS(distance_km - :distance_km) <= :tolerance
+   AND user_id = COALESCE(:user_id, 1)
  LIMIT 1;
 
 
 -- name: recent
 SELECT *
   FROM runs
+ WHERE user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC
  LIMIT :limit;
 
@@ -119,6 +121,7 @@ SELECT *
 SELECT *
   FROM runs
  WHERE type = :type
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC
  LIMIT :limit;
 
@@ -127,6 +130,7 @@ SELECT *
 SELECT *
   FROM runs
  WHERE date = :date
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY id DESC
  LIMIT 1;
 
@@ -141,6 +145,7 @@ SELECT date, name, distance_km, pace_sec_per_km, hr_avg, cadence_avg,
  WHERE source = 'garmin'
    AND date >= date('now', :since)
    AND ground_contact_ms IS NOT NULL
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC;
 
 
@@ -150,6 +155,7 @@ SELECT date, distance_km, gct_balance_left_pct,
        ABS(gct_balance_left_pct - 50.0) AS asymmetry_pct
   FROM runs
  WHERE gct_balance_left_pct IS NOT NULL
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC
  LIMIT :limit;
 

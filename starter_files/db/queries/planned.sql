@@ -4,11 +4,11 @@
 
 -- name: add<!
 INSERT INTO planned_workouts
-    (date, week_start, type_id, status_id, title, target_distance_km,
+    (user_id, date, week_start, type_id, status_id, title, target_distance_km,
      target_duration_min, target_pace_sec_per_km, target_hr_max, notes,
      weather_temp_c, weather_note)
 VALUES
-    (:date, :week_start, :type_id, :status_id, :title, :target_distance_km,
+    (:user_id, :date, :week_start, :type_id, :status_id, :title, :target_distance_km,
      :target_duration_min, :target_pace_sec_per_km, :target_hr_max, :notes,
      :weather_temp_c, :weather_note);
 
@@ -31,7 +31,8 @@ SELECT p.*,
   FROM planned_workouts p
   JOIN workout_types t ON t.id = p.type_id
   JOIN workout_statuses s ON s.id = p.status_id
- WHERE p.date = date('now')
+ WHERE p.user_id = :user_id
+   AND p.date = date('now')
  ORDER BY p.id;
 
 
@@ -42,7 +43,8 @@ SELECT p.*,
   FROM planned_workouts p
   JOIN workout_types t ON t.id = p.type_id
   JOIN workout_statuses s ON s.id = p.status_id
- WHERE p.date = :date
+ WHERE p.user_id = :user_id
+   AND p.date = :date
  ORDER BY p.id;
 
 
@@ -54,7 +56,8 @@ SELECT p.*,
   FROM planned_workouts p
   JOIN workout_types t ON t.id = p.type_id
   JOIN workout_statuses s ON s.id = p.status_id
- WHERE p.week_start = :week_start
+ WHERE p.user_id = :user_id
+   AND p.week_start = :week_start
  ORDER BY p.date, p.id;
 
 
@@ -66,7 +69,8 @@ SELECT p.*,
   FROM planned_workouts p
   JOIN workout_types t ON t.id = p.type_id
   JOIN workout_statuses s ON s.id = p.status_id
- WHERE p.week_start = date('now', 'weekday 0', '-6 days')
+ WHERE p.user_id = :user_id
+   AND p.week_start = date('now', 'weekday 0', '-6 days')
  ORDER BY p.date, p.id;
 
 
@@ -78,7 +82,8 @@ SELECT p.*,
   FROM planned_workouts p
   JOIN workout_types t ON t.id = p.type_id
   JOIN workout_statuses s ON s.id = p.status_id
- WHERE p.date > date('now')
+ WHERE p.user_id = :user_id
+   AND p.date > date('now')
    AND p.date <= date('now', :days)
  ORDER BY p.date, p.id
  LIMIT :limit;
@@ -116,7 +121,8 @@ UPDATE planned_workouts
 SELECT p.id
   FROM planned_workouts p
   JOIN workout_types t ON t.id = p.type_id
- WHERE p.date = :date
+ WHERE p.user_id = :user_id
+   AND p.date = :date
    AND t.category = 'run'
    AND p.actual_run_id IS NULL
  ORDER BY p.id
@@ -128,7 +134,8 @@ SELECT p.id
 SELECT p.id
   FROM planned_workouts p
   JOIN workout_types t ON t.id = p.type_id
- WHERE p.date = :date
+ WHERE p.user_id = :user_id
+   AND p.date = :date
    AND t.category = 'strength'
    AND p.actual_session_id IS NULL
  ORDER BY p.id
@@ -137,7 +144,7 @@ SELECT p.id
 
 -- name: delete_week!
 -- Wipe a whole week's plan (e.g. before regenerating it)
-DELETE FROM planned_workouts WHERE week_start = :week_start;
+DELETE FROM planned_workouts WHERE user_id = :user_id AND week_start = :week_start;
 
 
 -- name: week_summary
@@ -147,7 +154,8 @@ SELECT s.key AS status_key, s.display_pl AS status_display,
        SUM(p.target_distance_km) AS total_distance_km
   FROM planned_workouts p
   JOIN workout_statuses s ON s.id = p.status_id
- WHERE p.week_start = :week_start
+ WHERE p.user_id = :user_id
+   AND p.week_start = :week_start
  GROUP BY s.id, s.key, s.display_pl
  ORDER BY s.sort_order;
 
@@ -180,7 +188,8 @@ SELECT c.id AS component_id, c.order_idx, c.label, c.actual_notes AS component_n
   JOIN planned_workouts p ON p.id = c.planned_workout_id
   JOIN workout_types t ON t.id = p.type_id
   JOIN workout_statuses ps ON ps.id = p.status_id
- WHERE p.date = :date
+ WHERE p.user_id = :user_id
+   AND p.date = :date
  ORDER BY p.id, c.order_idx, c.id;
 
 
@@ -198,7 +207,8 @@ SELECT c.id AS component_id, c.order_idx, c.label, c.actual_notes AS component_n
   JOIN planned_workouts p ON p.id = c.planned_workout_id
   JOIN workout_types t ON t.id = p.type_id
   JOIN workout_statuses ps ON ps.id = p.status_id
- WHERE p.date = date('now')
+ WHERE p.user_id = :user_id
+   AND p.date = date('now')
  ORDER BY p.id, c.order_idx, c.id;
 
 

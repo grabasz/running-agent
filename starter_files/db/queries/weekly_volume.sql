@@ -19,6 +19,7 @@ ON CONFLICT(week_start) DO UPDATE SET
 -- name: recent
 SELECT *
   FROM weekly_volume
+ WHERE user_id = COALESCE(:user_id, 1)
  ORDER BY week_start DESC
  LIMIT :weeks;
 
