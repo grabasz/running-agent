@@ -17,5 +17,6 @@ SELECT *
 -- name: history
 SELECT *
   FROM vdot_history
+ WHERE user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC
  LIMIT :limit;

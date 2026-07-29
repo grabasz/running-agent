@@ -18,6 +18,7 @@ SELECT * FROM tasks WHERE id = :id;
 SELECT *
   FROM tasks
  WHERE status = 'open'
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY (due_date IS NULL), due_date, id;
 
 
@@ -26,6 +27,7 @@ SELECT *
   FROM tasks
  WHERE category = :category
    AND status != 'wontdo'
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY (status = 'done'), (due_date IS NULL), due_date, id;
 
 
@@ -33,6 +35,7 @@ SELECT *
 -- Wszystkie taski (open + done + wontdo), dla widoku drzewa "pokaż wszystko".
 SELECT *
   FROM tasks
+ WHERE user_id = COALESCE(:user_id, 1)
  ORDER BY (parent_id IS NULL) DESC, parent_id, (due_date IS NULL), due_date, id;
 
 
@@ -48,6 +51,7 @@ SELECT *
 SELECT *
   FROM tasks
  WHERE parent_id IS NULL
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY (status = 'done'), (due_date IS NULL), due_date, id;
 
 

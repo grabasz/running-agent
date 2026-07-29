@@ -51,6 +51,7 @@ SELECT *
   FROM races
  WHERE actual_time_sec IS NULL
    AND date >= date('now')
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY date;
 
 
@@ -58,4 +59,5 @@ SELECT *
 SELECT *
   FROM races
  WHERE actual_time_sec IS NOT NULL
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC;

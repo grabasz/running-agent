@@ -17,6 +17,7 @@ SELECT * FROM notes WHERE id = :id;
 -- Ostatnie N notatek — feed na dashboardzie.
 SELECT *
   FROM notes
+ WHERE user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC, id DESC
  LIMIT :limit;
 

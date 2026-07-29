@@ -21,6 +21,7 @@ VALUES
 -- name: sessions_recent
 SELECT *
   FROM gym_sessions
+ WHERE user_id = COALESCE(:user_id, 1)
  ORDER BY date DESC, id DESC
  LIMIT :limit;
 
@@ -49,6 +50,7 @@ SELECT s.date,
   FROM gym_sets gs
   JOIN gym_sessions s ON s.id = gs.session_id
  WHERE gs.exercise = :exercise
+   AND user_id = COALESCE(:user_id, 1)
  ORDER BY s.date DESC, gs.set_num
  LIMIT :limit;
 
@@ -61,5 +63,6 @@ SELECT gs.exercise,
   FROM gym_sets gs
   JOIN gym_sessions s ON s.id = gs.session_id
  WHERE s.date >= :since
+   AND user_id = COALESCE(:user_id, 1)
  GROUP BY gs.exercise
  ORDER BY volume_kg DESC;

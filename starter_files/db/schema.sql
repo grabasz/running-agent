@@ -5,13 +5,9 @@
 PRAGMA foreign_keys = ON;
 
 -- ============================================
--- USERS (multi-tenant foundation)
+-- USERS (multi-tenant foundation, Fazy 18A + 18B)
 -- ============================================
---
--- Baseline is single-user: id=1 is seeded as 'default'. All personalised
--- tables carry `user_id` with DEFAULT 1 for back-compat with pre-multitenant
--- rows. Add more users by INSERTing rows here and passing user_id explicitly
--- in queries.
+
 CREATE TABLE IF NOT EXISTS users (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     name              TEXT    NOT NULL UNIQUE,
@@ -20,8 +16,11 @@ CREATE TABLE IF NOT EXISTS users (
     created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-INSERT OR IGNORE INTO users (id, name, display_name, garmin_token_dir)
-VALUES (1, 'default', 'Default User', 'default');
+-- Domyślny user seed (id=1). Kolejnych userów dodajesz przez INSERT INTO users, np.:
+--   INSERT INTO users (id, name, display_name, garmin_token_dir) VALUES (2, 'kate', 'Kate', 'kate');
+-- Nazwa wyświetlana w dashboardzie — konfigurowana per user przez USER<N>_NAME env var.
+INSERT OR IGNORE INTO users (id, name, display_name, garmin_token_dir) VALUES
+    (1, 'user1', 'User 1', 'user1');
 
 -- ============================================
 -- GYM
@@ -29,15 +28,18 @@ VALUES (1, 'default', 'Default User', 'default');
 
 CREATE TABLE IF NOT EXISTS gym_sessions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     date            TEXT NOT NULL,             -- YYYY-MM-DD
     duration_min    INTEGER,
     hr_avg          INTEGER,
     hr_max          INTEGER,
     calories        INTEGER,
-    context         TEXT,                      -- e.g. "Powrot po przerwie", "pod kolano valgus"
+    context         TEXT,
     notes           TEXT,
     created_at      TEXT DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_gym_sessions_user_date ON gym_sessions(user_id, date);
 
 CREATE INDEX IF NOT EXISTS idx_gym_sessions_date ON gym_sessions(date);
 
@@ -64,6 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_gym_sets_exercise ON gym_sets(exercise);
 
 CREATE TABLE IF NOT EXISTS runs (
     id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id                     INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     -- Provider keys
     strava_id                   INTEGER UNIQUE,
     garmin_activity_id          INTEGER UNIQUE,
@@ -163,7 +166,8 @@ CREATE INDEX IF NOT EXISTS idx_run_streams_run_sec ON run_streams(run_id, sec);
 
 CREATE TABLE IF NOT EXISTS weekly_volume (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    week_start          TEXT UNIQUE NOT NULL,  -- ISO Monday YYYY-MM-DD
+    user_id             INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+    week_start          TEXT NOT NULL,          -- ISO Monday YYYY-MM-DD (UNIQUE per user via idx)
     distance_km         REAL,
     elevation_gain_m    INTEGER,
     duration_sec        INTEGER,
@@ -172,12 +176,15 @@ CREATE TABLE IF NOT EXISTS weekly_volume (
     trend               TEXT                    -- "peak", "recovery", or NULL
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_volume_user_week ON weekly_volume(user_id, week_start);
+
 -- ============================================
 -- RACES
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS races (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id             INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     date                TEXT NOT NULL,
     name                TEXT NOT NULL,
     distance_km         REAL NOT NULL,
@@ -190,7 +197,7 @@ CREATE TABLE IF NOT EXISTS races (
     strategy            TEXT,
     notes               TEXT,
     run_id              INTEGER REFERENCES runs(id),  -- link to Strava activity
-    -- Dedup: one race per (date, name) — protects against re-imports
+    -- Dedup: one race per (date, name) — can't add Białystok 10.05 twice
     UNIQUE(date, name)
 );
 
@@ -211,15 +218,15 @@ CREATE TABLE IF NOT EXISTS body_state (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     date        TEXT NOT NULL,                  -- YYYY-MM-DD
-    location    TEXT NOT NULL,                  -- "kolano_prawe", "lydka_prawa", "krzyz", "posladki_doms", etc
-    pain_0_10   INTEGER,                        -- 0-10 (null if just DOMS flag)
-    doms        INTEGER DEFAULT 0,              -- 1 if DOMS (zakwasy)
-    notes       TEXT,
-    UNIQUE(date, location)
+    location    TEXT NOT NULL,
+    pain_0_10   INTEGER,
+    doms        INTEGER DEFAULT 0,
+    notes       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_body_state_date ON body_state(date);
 CREATE INDEX IF NOT EXISTS idx_body_state_user_date ON body_state(user_id, date);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_body_state_user_date_loc ON body_state(user_id, date, location);
 
 -- ============================================
 -- PLANNED WORKOUTS (training plan, mobile-friendly)
@@ -333,14 +340,16 @@ INSERT OR IGNORE INTO workout_types (id, key, display_pl, display_en, category, 
 
 CREATE TABLE IF NOT EXISTS vdot_history (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    date        TEXT NOT NULL UNIQUE,           -- one VDOT entry per date (overwrite if re-test same day)
+    user_id     INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+    date        TEXT NOT NULL,
     vdot        INTEGER NOT NULL,
     t_pace_sec  INTEGER,                        -- seconds per km
-    source      TEXT,                           -- e.g. "HM race", "5K time trial", "field test"
+    source      TEXT,                           -- "HM race", "5K time trial", "field test"
     notes       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_vdot_date ON vdot_history(date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vdot_user_date ON vdot_history(user_id, date);
 
 -- ============================================
 -- LIFE / TASKS / NOTES (Faza 17 — "Rozkminy")
@@ -350,6 +359,7 @@ CREATE INDEX IF NOT EXISTS idx_vdot_date ON vdot_history(date);
 -- SMART: title=Specific, success_criteria=Measurable, due_date=Time-bound (opcjonalne).
 CREATE TABLE IF NOT EXISTS tasks (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id             INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     parent_id           INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     category            TEXT NOT NULL,              -- sport / praca / dom / relacje / zdrowie / inne
     title               TEXT NOT NULL,
@@ -367,24 +377,27 @@ CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_category ON tasks(category);
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks(user_id, status);
 
 -- Cel per kategoria per tydzień (jeden goal per (week, category) — UNIQUE).
 CREATE TABLE IF NOT EXISTS weekly_goals (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     week_start  TEXT NOT NULL,                      -- ISO Monday YYYY-MM-DD
     category    TEXT NOT NULL,
     goal        TEXT NOT NULL,
     status      TEXT NOT NULL DEFAULT 'open',       -- open / done
     created_at  TEXT DEFAULT (datetime('now')),
-    updated_at  TEXT,
-    UNIQUE(week_start, category)
+    updated_at  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_weekly_goals_week ON weekly_goals(week_start);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_weekly_goals_user_week_cat ON weekly_goals(user_id, week_start, category);
 
 -- Strumień notatek — Claude auto-wrzuca insight/decision/reminder/idea; user może manual.
 CREATE TABLE IF NOT EXISTS notes (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id             INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
     date                TEXT NOT NULL,
     category            TEXT NOT NULL,              -- insight / decision / reminder / idea
     content             TEXT NOT NULL,
@@ -398,3 +411,4 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE INDEX IF NOT EXISTS idx_notes_date ON notes(date);
 CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category);
 CREATE INDEX IF NOT EXISTS idx_notes_task ON notes(related_task_id);
+CREATE INDEX IF NOT EXISTS idx_notes_user_created ON notes(user_id, created_at);
