@@ -86,19 +86,23 @@ def _get_secret(key: str) -> str | None:
     return os.getenv(key)
 
 
-def _resolve_user(pw: str) -> tuple[int, str] | None:
-    """Mapuj wpisane hasło na (user_id, display_name).
+def _resolve_user(username: str, pw: str) -> tuple[int, str] | None:
+    """Zweryfikuj (username, password) i zwróć (user_id, display_name) lub None.
 
-    Konfiguracja przez env vars:
-      USER1_NAME / USER1_PASSWORD → (1, USER1_NAME)
-      USER2_NAME / USER2_PASSWORD → (2, USER2_NAME)
-      APP_PASSWORD (legacy)       → (1, DEFAULT_USER_NAME)
+    Konfiguracja przez env/secrets:
+      USER<N>_NAME + USER<N>_PASSWORD (N=1..3)
+      APP_PASSWORD (legacy) — dowolny username, mapuje na user_id=1
     """
+    uname = username.strip().lower()
+    if not uname or not pw:
+        return None
     for uid in (1, 2, 3):
-        stored = _get_secret(f"USER{uid}_PASSWORD")
-        if stored and pw == stored:
-            name = _get_secret(f"USER{uid}_NAME") or f"User {uid}"
-            return (uid, name)
+        stored_name = _get_secret(f"USER{uid}_NAME")
+        stored_pw = _get_secret(f"USER{uid}_PASSWORD")
+        if not (stored_name and stored_pw):
+            continue
+        if uname == stored_name.strip().lower() and pw == stored_pw:
+            return (uid, stored_name)
     pw_app = _get_secret("APP_PASSWORD")
     if pw_app and pw == pw_app:
         name = _get_secret("USER1_NAME") or _get_secret("DEFAULT_USER_NAME") or "User"
@@ -117,10 +121,12 @@ def _check_password() -> bool:
         return True
 
     st.title(f"🔒 {DASHBOARD_TITLE}")
-    st.caption("Wpisz swoje hasło — dostęp zostanie dopasowany automatycznie.")
-    pw = st.text_input("Hasło", type="password", key="pw_input")
-    if st.button("Zaloguj"):
-        resolved = _resolve_user(pw)
+    with st.form("login_form", clear_on_submit=False):
+        username = st.text_input("Użytkownik", key="username_input", autocomplete="username")
+        pw = st.text_input("Hasło", type="password", key="pw_input", autocomplete="current-password")
+        submitted = st.form_submit_button("Zaloguj")
+    if submitted:
+        resolved = _resolve_user(username, pw)
         if resolved:
             uid, uname = resolved
             st.session_state["auth_ok"] = True
@@ -130,7 +136,7 @@ def _check_password() -> bool:
             st.cache_data.clear()
             st.rerun()
         else:
-            st.error("Złe hasło.")
+            st.error("Zły użytkownik lub hasło.")
     return False
 
 
