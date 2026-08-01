@@ -1115,7 +1115,7 @@ def page_life():
 
 def page_learning():
     st.title("🎓 O co chodzi w bieganiu?")
-    st.caption("Twoi trenerzy — Jack Daniels + zdrowy rozsądek. Tu jest po ludzku, bez żargonu.")
+    st.caption("Twoi trenerzy — Jack Daniels + zdrowy rozsądek.")
 
     st.markdown("### 🏃‍♂️ 5 typów treningu — co i dlaczego")
 
@@ -1135,10 +1135,10 @@ Tego biegania nigdy nie jest za dużo. To fundament wszystkiego innego.
 **Jak biegać:**  Tak szybko, że nie da się gadać pełnymi zdaniami — tylko krótkie słowa. Nie jest "cierpienie", ale też nie "spacer".
 Wyobraź sobie że biegniesz **tempem, którym mógłbyś biec przez godzinę** i tylko pod koniec zaczyna boleć.
 
-**Po co:**  Uczy ciało **jeździć na granicy** — próg mleczanowy. Za tydzień będziesz umiał utrzymać to tempo dłużej.
+**Po co:**  Uczy ciało **wysiłku na granicy** — próg mleczanowy. Za tydzień będziesz umiał utrzymać to tempo dłużej.
 
 **Typowa struktura:**  2 km rozgrzewka → 4-6 km tempo → 2 km wychłodzenie.
-**Jak się czuć potem:**  Zadowolony, ale się nachukałeś.
+**Jak się czuć potem:**  Zadowolony i się nie zmęczyłeś 😅
         """)
 
     with st.expander("🛣️ **Long** — długo, wolno, bez pośpiechu"):
