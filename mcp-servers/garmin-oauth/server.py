@@ -52,6 +52,11 @@ except ImportError:
 
 TOKEN_DIR = os.environ.get("TOKEN_DIR") or str(Path.home() / ".garminconnect")
 
+# Multi-tenant: which DB user this MCP instance operates on.
+# Default 1 (Bartek) for backward compat with existing deploys / local dev.
+# Set USER_ID=2 for Matiego's Fly deploy, etc.
+USER_ID = int(os.environ.get("USER_ID", "1"))
+
 
 def _seed_tokens_from_env() -> None:
     """First-boot bootstrap for cloud deploy.
@@ -72,38 +77,40 @@ def _seed_tokens_from_env() -> None:
 
 mcp = FastMCP(
     "personal-training",
-    instructions="""Personal running-training assistant MCP. Two domains:
-- GARMIN: device + Garmin Connect service (activities, splits, sleep, HRV, etc.)
-- DB:     local Turso/SQLite — source of truth for the training plan and history.
+    instructions="""Personal training assistant MCP for Bartek — runner (VDOT ~55, target sub-1:35 HM Gniezno 20.09).
+Two domains: GARMIN (device + external service) and DB (Turso — source of truth for training plan + history).
 
 DECISION RULES:
-- "what's planned / plan this week / tomorrow's workout" -> DB: db-planned-for-date, db-week-plan
-- "last run / splits / how did it go"                    -> GARMIN: get-last-run (server-side filter — do NOT use list-activities + client filter)
-- "current VDOT / training paces"                        -> DB: db-current-vdot
-- "form trend / last few weeks"                          -> DB: db-recent-runs, db-weekly-volume, db-recent-gym
-- "knee / body state / DOMS"                             -> DB: db-body-state
-- "PB at distance / race history"                        -> DB: db-race-pbs
-- "sleep / HRV / body battery / training readiness"      -> GARMIN: get-sleep, get-hrv, get-body-battery, get-training-readiness
+- "co ma zaplanowane / plan tygodnia / na jutro"   → DB: db-planned-for-date, db-week-plan
+- "ostatni bieg / splity / jak poszło"             → GARMIN: get-last-run (server-side filter — DO NOT use list-activities + client filter)
+- "aktualny VDOT / tempa treningowe"               → DB: db-current-vdot
+- "trend formy / ostatnie tygodnie"                → DB: db-recent-runs, db-weekly-volume, db-recent-gym
+- "kolano / body state / DOMS" (READ)              → DB: db-body-state
+- "boli / czuję dyskomfort / lekki ból" (WRITE)    → DB: db-log-body-state (mobile-friendly UPSERT: location + pain_0_10 + notes)
+- "zapisz notatkę / insight / decyzja / pomysł"    → DB: db-add-note (category: insight/decision/reminder/idea/observation)
+- "dodaj zadanie / TODO / muszę zrobić"            → DB: db-add-task (category: sport/praca/dom/relacje/zdrowie/inne, priority: low/medium/high)
+- "PB w dystansie / historia startów"              → DB: db-race-pbs
+- "sen / HRV / body battery / training readiness"  → GARMIN: get-sleep, get-hrv, get-body-battery, get-training-readiness
 
 PLANNING NEXT WEEK (workflow):
 1. Assess: db-current-vdot + db-recent-runs(days=14) + db-body-state(days=14) + db-weekly-volume(weeks=4)
 2. Read allowed types: db-workout-types
 3. For each day: db-plan-workout(date, type_key, title, target_distance_km, target_pace_sec_per_km, notes)
-4. To reset a week first: db-clear-week(week_start) — refuses if any status='done'
-5. DO NOT call create-workout / schedule-workout unless the user EXPLICITLY wants the workout on the Garmin device
-   (planning DB entry != pushing workout to watch). Ask before pushing.
+4. To reset a week first: db-clear-week(week_start)  — refuses if any status='done'
+5. DO NOT call create-workout / schedule-workout unless user EXPLICITLY wants the workout on the Garmin device
+   (planning DB entry ≠ pushing workout to watch). Ask before pushing.
 
 CREATING GARMIN WORKOUT FROM PLAN:
 1. db-planned-for-date(date) — read what to build
 2. Construct workout JSON per Garmin schema (running or strength)
-3. create-workout(workout=...) -> schedule-workout(workoutId, date=...)
+3. create-workout(workout=...) → schedule-workout(workoutId, date=...)
 
 INVARIANTS:
 - DB planned_workouts = plan (source of truth). Garmin workouts = pushed-to-device (subset).
 - Garmin activities = what was actually done (immutable).
 - Never delete a planned_workout with status='done' — db-delete-planned-workout refuses this.
 - Dates always YYYY-MM-DD. week_start = Monday (ISO).
-- Paces: sec/km (e.g. 6:15/km = 375). Refer to Jack Daniels' VDOT tables for the user's current pace zones.
+- Paces: sec/km (e.g. 6:15/km = 375). VDOT 55 → E 6:00-6:30, M 5:20-5:30, T 4:55-5:05.
 """
 )
 
@@ -145,7 +152,7 @@ def _wrap_401(fn):
                     return _dumps({
                         "status": "error",
                         "message": f"{type(e2).__name__}: {e2}",
-                        "fix": "Re-run the OAuth login flow: python test_login.py from the garmin-oauth folder.",
+                        "fix": "Run: python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\test_login.py",
                     })
             return _dumps({"status": "error", "message": f"{type(e).__name__}: {e}"})
     inner.__signature__ = inspect.signature(fn)
@@ -172,10 +179,10 @@ def check_session() -> str:
 @mcp.tool(name="garmin-login", description="Instructions for OAuth setup (one-time).")
 def garmin_login() -> str:
     return (
-        "Garmin OAuth setup (one-time). Run the two scripts from the garmin-oauth folder:\n"
-        "  1. python setup_credentials.py   # save Garmin email + password to your OS secret store\n"
-        "  2. python test_login.py          # complete OAuth1+OAuth2 (handles MFA)\n"
-        "OAuth1 refresh token lives ~1 year. Verify anytime with check-session."
+        "Garmin OAuth setup (one-time):\n"
+        "  1. python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\setup_credentials.py\n"
+        "  2. python C:\\Users\\grabb\\.mcp-servers\\garmin-oauth\\test_login.py\n"
+        "OAuth1 lives ~1 year. Verify with check-session."
     )
 
 
@@ -526,7 +533,7 @@ def _monday(d: str | None = None) -> str:
 @mcp.tool(name="db-current-vdot", description="Get the current (latest) VDOT + threshold pace. Use for computing Jack Daniels training paces.")
 @_wrap_401
 def db_current_vdot() -> str:
-    rows = _tq("SELECT date, vdot, t_pace_sec, source, notes FROM vdot_history ORDER BY date DESC LIMIT 1")
+    rows = _tq("SELECT date, vdot, t_pace_sec, source, notes FROM vdot_history WHERE user_id = ? ORDER BY date DESC LIMIT 1", (USER_ID,))
     return _dumps(rows[0] if rows else {"status": "no_vdot_recorded"})
 
 
@@ -544,9 +551,9 @@ def db_week_plan(week_start: str | None = None) -> str:
           FROM planned_workouts p
           JOIN workout_types t ON t.id = p.type_id
           JOIN workout_statuses s ON s.id = p.status_id
-         WHERE p.week_start = ?
+         WHERE p.week_start = ? AND p.user_id = ?
          ORDER BY p.date, p.id
-    """, (ws,))
+    """, (ws, USER_ID))
     return _dumps({"week_start": ws, "workouts": rows})
 
 
@@ -560,9 +567,9 @@ def db_planned_for_date(date: str) -> str:
           FROM planned_workouts p
           JOIN workout_types t ON t.id = p.type_id
           JOIN workout_statuses s ON s.id = p.status_id
-         WHERE p.date = ?
+         WHERE p.date = ? AND p.user_id = ?
          ORDER BY p.id
-    """, (date,))
+    """, (date, USER_ID))
     return _dumps(rows)
 
 
@@ -574,9 +581,10 @@ def db_plan_components(planned_workout_id: int) -> str:
                s.key AS status_key, s.display_pl AS status_display
           FROM planned_workout_components c
           JOIN workout_statuses s ON s.id = c.status_id
-         WHERE c.planned_workout_id = ?
+          JOIN planned_workouts p ON p.id = c.planned_workout_id
+         WHERE c.planned_workout_id = ? AND p.user_id = ?
          ORDER BY c.order_idx, c.id
-    """, (planned_workout_id,))
+    """, (planned_workout_id, USER_ID))
     return _dumps(rows)
 
 
@@ -590,9 +598,9 @@ def db_recent_runs(days: int = 14) -> str:
                stride_length_cm, vertical_ratio_pct,
                training_effect_aerobic, training_load, type, notes
           FROM runs
-         WHERE date >= date('now', '-{int(days)} days')
+         WHERE date >= date('now', '-{int(days)} days') AND user_id = ?
          ORDER BY date DESC, id DESC
-    """)
+    """, (USER_ID,))
     return _dumps(rows)
 
 
@@ -602,9 +610,9 @@ def db_recent_gym(days: int = 14) -> str:
     sessions = _tq(f"""
         SELECT id, date, duration_min, hr_avg, hr_max, context, notes
           FROM gym_sessions
-         WHERE date >= date('now', '-{int(days)} days')
+         WHERE date >= date('now', '-{int(days)} days') AND user_id = ?
          ORDER BY date DESC
-    """)
+    """, (USER_ID,))
     for s in sessions:
         s["sets"] = _tq("""
             SELECT exercise, set_num, reps, duration_sec, weight_kg, weight_per_side, rpe, notes
@@ -619,9 +627,9 @@ def db_body_state(days: int = 14) -> str:
     rows = _tq(f"""
         SELECT date, location, pain_0_10, doms, notes
           FROM body_state
-         WHERE date >= date('now', '-{int(days)} days')
+         WHERE date >= date('now', '-{int(days)} days') AND user_id = ?
          ORDER BY date DESC, location
-    """)
+    """, (USER_ID,))
     return _dumps(rows)
 
 
@@ -631,8 +639,9 @@ def db_weekly_volume(weeks: int = 6) -> str:
     rows = _tq(f"""
         SELECT week_start, distance_km, elevation_gain_m, duration_sec, num_runs, longest_km, trend
           FROM weekly_volume
+         WHERE user_id = ?
          ORDER BY week_start DESC LIMIT {int(weeks)}
-    """)
+    """, (USER_ID,))
     return _dumps(rows)
 
 
@@ -643,8 +652,9 @@ def db_race_pbs() -> str:
         SELECT date, name, distance_km, target_time_sec, actual_time_sec, is_pb,
                place_overall, strategy, notes
           FROM races
+         WHERE user_id = ?
          ORDER BY date DESC
-    """)
+    """, (USER_ID,))
     return _dumps(rows)
 
 
@@ -698,11 +708,11 @@ def db_plan_workout(
     result = _tx("""
         INSERT INTO planned_workouts
             (date, week_start, type_id, status_id, title, target_distance_km,
-             target_duration_min, target_pace_sec_per_km, target_hr_max, notes)
-        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+             target_duration_min, target_pace_sec_per_km, target_hr_max, notes, user_id)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
     """, (date, week_start, tk[0]["id"], title, target_distance_km,
-          target_duration_min, target_pace_sec_per_km, target_hr_max, notes))
-    return _dumps({"status": "ok", "planned_workout_id": result["lastrowid"], "date": date, "type_key": type_key})
+          target_duration_min, target_pace_sec_per_km, target_hr_max, notes, USER_ID))
+    return _dumps({"status": "ok", "planned_workout_id": result["lastrowid"], "date": date, "type_key": type_key, "user_id": USER_ID})
 
 
 @mcp.tool(
@@ -711,9 +721,9 @@ def db_plan_workout(
 )
 @_wrap_401
 def db_plan_component(planned_workout_id: int, order_idx: int, label: str) -> str:
-    parent = _tq("SELECT id FROM planned_workouts WHERE id = ?", (planned_workout_id,))
+    parent = _tq("SELECT id FROM planned_workouts WHERE id = ? AND user_id = ?", (planned_workout_id, USER_ID))
     if not parent:
-        return _dumps({"status": "error", "message": f"No planned_workout with id={planned_workout_id}"})
+        return _dumps({"status": "error", "message": f"No planned_workout with id={planned_workout_id} for user_id={USER_ID}"})
     result = _tx("""
         INSERT INTO planned_workout_components (planned_workout_id, order_idx, label, status_id)
         VALUES (?, ?, ?, 1)
@@ -730,14 +740,14 @@ def db_delete_planned_workout(planned_workout_id: int) -> str:
     row = _tq("""
         SELECT p.id, p.date, p.title, s.key AS status_key
           FROM planned_workouts p JOIN workout_statuses s ON s.id = p.status_id
-         WHERE p.id = ?
-    """, (planned_workout_id,))
+         WHERE p.id = ? AND p.user_id = ?
+    """, (planned_workout_id, USER_ID))
     if not row:
-        return _dumps({"status": "error", "message": f"No planned_workout with id={planned_workout_id}"})
+        return _dumps({"status": "error", "message": f"No planned_workout with id={planned_workout_id} for user_id={USER_ID}"})
     if row[0]["status_key"] == "done":
         return _dumps({"status": "error", "message": "Refusing to delete a 'done' workout — mark as 'skipped' instead if needed"})
     _tx("DELETE FROM planned_workout_components WHERE planned_workout_id = ?", (planned_workout_id,))
-    _tx("DELETE FROM planned_workouts WHERE id = ?", (planned_workout_id,))
+    _tx("DELETE FROM planned_workouts WHERE id = ? AND user_id = ?", (planned_workout_id, USER_ID))
     return _dumps({"status": "ok", "deleted": row[0]})
 
 
@@ -750,14 +760,151 @@ def db_clear_week(week_start: str) -> str:
     done = _tq("""
         SELECT COUNT(*) AS n FROM planned_workouts p
           JOIN workout_statuses s ON s.id = p.status_id
-         WHERE p.week_start = ? AND s.key = 'done'
-    """, (week_start,))
+         WHERE p.week_start = ? AND p.user_id = ? AND s.key = 'done'
+    """, (week_start, USER_ID))
     if done and done[0]["n"] > 0:
         return _dumps({"status": "error", "message": f"Refusing — {done[0]['n']} workouts in week {week_start} are marked 'done'"})
     _tx("""DELETE FROM planned_workout_components WHERE planned_workout_id IN
-           (SELECT id FROM planned_workouts WHERE week_start = ?)""", (week_start,))
-    result = _tx("DELETE FROM planned_workouts WHERE week_start = ?", (week_start,))
+           (SELECT id FROM planned_workouts WHERE week_start = ? AND user_id = ?)""", (week_start, USER_ID))
+    result = _tx("DELETE FROM planned_workouts WHERE week_start = ? AND user_id = ?", (week_start, USER_ID))
     return _dumps({"status": "ok", "week_start": week_start, "deleted_workouts": result["rowcount"]})
+
+
+# ---------------------------------------------------------------------------
+# WRITE tools — mobile-friendly (body_state, notes, tasks)
+# ---------------------------------------------------------------------------
+
+_ALLOWED_NOTE_CATEGORIES = ("insight", "decision", "reminder", "idea", "observation")
+_ALLOWED_TASK_CATEGORIES = ("sport", "praca", "dom", "relacje", "zdrowie", "inne")
+_ALLOWED_TASK_PRIORITIES = ("low", "medium", "high")
+
+
+@mcp.tool(
+    name="db-log-body-state",
+    description="""Log a body-state entry (pain / DOMS at a specific location). UPSERT on (date, location).
+
+Args:
+  location: free text describing where — use existing patterns when possible
+            (e.g. "kolano_prawe", "kolano_lewe", "lydka_prawa", "posladek_prawy", "plecy", "krzyz",
+             "przywodziciel_prawy", "piriformis_prawy", "glute_prawy"). Snake_case, Polish body-parts.
+  pain_0_10: integer 0-10 (0 = fine, 3 = discomfort, 5 = noticeable pain, 8+ = severe).
+  notes: optional free text — what triggered it, when, what helps.
+  date: optional YYYY-MM-DD, defaults to today.
+  doms: optional bool (True = delayed-onset muscle soreness from prior workout), default False.
+
+Perfect for mobile: "boli mnie kolano prawe 4/10 po biegu" → db-log-body-state(location="kolano_prawe", pain_0_10=4, notes="po biegu")."""
+)
+@_wrap_401
+def db_log_body_state(
+    location: str,
+    pain_0_10: int,
+    notes: str | None = None,
+    date: str | None = None,
+    doms: bool = False,
+) -> str:
+    from datetime import date as _d
+    d = date or _d.today().isoformat()
+    if not isinstance(pain_0_10, int) or not (0 <= pain_0_10 <= 10):
+        return _dumps({"status": "error", "message": f"pain_0_10 must be int 0-10, got {pain_0_10!r}"})
+    loc = (location or "").strip()
+    if not loc:
+        return _dumps({"status": "error", "message": "location is required (e.g. 'kolano_prawe')"})
+    _tx("""
+        INSERT INTO body_state (user_id, date, location, pain_0_10, doms, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(date, location) DO UPDATE SET
+            pain_0_10 = excluded.pain_0_10,
+            doms = excluded.doms,
+            notes = excluded.notes
+    """, (USER_ID, d, loc, int(pain_0_10), 1 if doms else 0, notes))
+    return _dumps({
+        "ok": True, "date": d, "location": loc, "pain_0_10": int(pain_0_10),
+        "doms": bool(doms), "note": notes, "user_id": USER_ID,
+    })
+
+
+@mcp.tool(
+    name="db-add-note",
+    description="""Add a note to the notes stream (insight/decision/reminder/idea/observation).
+
+Args:
+  category: one of insight | decision | reminder | idea | observation.
+  content: free text — the note body.
+  date: optional YYYY-MM-DD, defaults to today.
+  related_run_id: optional int — link to a runs.id (e.g. an insight about a specific run).
+  related_task_id: optional int — link to a tasks.id (e.g. a decision that closes a task).
+
+Perfect for mobile: "zapisz insight: po rolowaniu stopy klekanie znika" → db-add-note(category="insight", content="Po rolowaniu stopy prawej klekanie znika")."""
+)
+@_wrap_401
+def db_add_note(
+    category: str,
+    content: str,
+    date: str | None = None,
+    related_run_id: int | None = None,
+    related_task_id: int | None = None,
+) -> str:
+    from datetime import date as _d
+    d = date or _d.today().isoformat()
+    cat = (category or "").strip().lower()
+    if cat not in _ALLOWED_NOTE_CATEGORIES:
+        return _dumps({"status": "error",
+                       "message": f"category must be one of {list(_ALLOWED_NOTE_CATEGORIES)}, got {category!r}"})
+    txt = (content or "").strip()
+    if not txt:
+        return _dumps({"status": "error", "message": "content is required"})
+    result = _tx("""
+        INSERT INTO notes (user_id, date, category, content, related_task_id,
+                           related_run_id, related_session_id, source)
+        VALUES (?, ?, ?, ?, ?, ?, NULL, 'mcp_mobile')
+    """, (USER_ID, d, cat, txt, related_task_id, related_run_id))
+    return _dumps({
+        "ok": True, "id": result["lastrowid"], "date": d, "category": cat,
+        "content_preview": txt[:80] + ("…" if len(txt) > 80 else ""),
+        "user_id": USER_ID,
+    })
+
+
+@mcp.tool(
+    name="db-add-task",
+    description="""Add a task to the Rozkminy (tasks) list.
+
+Args:
+  category: one of sport | praca | dom | relacje | zdrowie | inne.
+  title: short imperative — "Umów fizjo", "Kupić rolki", "Zadzwonić do Kuby".
+  priority: one of low | medium | high (default medium).
+  due_date: optional YYYY-MM-DD.
+  description: optional longer context.
+
+Perfect for mobile: "dodaj task: umow fizjo pilnie" → db-add-task(category="zdrowie", title="Umow fizjo", priority="high")."""
+)
+@_wrap_401
+def db_add_task(
+    category: str,
+    title: str,
+    priority: str = "medium",
+    due_date: str | None = None,
+    description: str | None = None,
+) -> str:
+    cat = (category or "").strip().lower()
+    if cat not in _ALLOWED_TASK_CATEGORIES:
+        return _dumps({"status": "error",
+                       "message": f"category must be one of {list(_ALLOWED_TASK_CATEGORIES)}, got {category!r}"})
+    prio = (priority or "medium").strip().lower()
+    if prio not in _ALLOWED_TASK_PRIORITIES:
+        return _dumps({"status": "error",
+                       "message": f"priority must be one of {list(_ALLOWED_TASK_PRIORITIES)}, got {priority!r}"})
+    ttl = (title or "").strip()
+    if not ttl:
+        return _dumps({"status": "error", "message": "title is required"})
+    result = _tx("""
+        INSERT INTO tasks (user_id, category, title, description, due_date, status, priority, created_at)
+        VALUES (?, ?, ?, ?, ?, 'todo', ?, datetime('now'))
+    """, (USER_ID, cat, ttl, description, due_date, prio))
+    return _dumps({
+        "ok": True, "id": result["lastrowid"], "category": cat, "title": ttl,
+        "priority": prio, "due_date": due_date, "user_id": USER_ID,
+    })
 
 
 # ============================================================================
@@ -811,20 +958,28 @@ class _OAuthState:
 
 
 def _lenient_claude_client(client_info):
-    """Return a client instance that accepts any redirect_uri under claude.ai / claude.com.
+    """Return a client instance that accepts any redirect_uri under known MCP hosts.
 
     We pre-register the client with a placeholder redirect_uris entry (pydantic
     won't accept empty), then swap in this subclass when the SDK loads it —
-    Claude's actual callback URL varies per org and is not documented.
-    Non-Claude redirect URIs fall through to parent which enforces the list.
+    Claude/ChatGPT actual callback URLs vary per org / per connector and are
+    not documented up-front. Unknown hosts fall through to parent which enforces
+    the list.
     """
     from mcp.shared.auth import OAuthClientInformationFull
+
+    ALLOWED_PREFIXES = (
+        "https://claude.ai/",
+        "https://claude.com/",
+        "https://chatgpt.com/",
+        "https://chat.openai.com/",
+    )
 
     class _LenientClient(OAuthClientInformationFull):
         def validate_redirect_uri(self, redirect_uri):
             if redirect_uri is not None:
                 s = str(redirect_uri).lower()
-                if s.startswith("https://claude.ai/") or s.startswith("https://claude.com/"):
+                if any(s.startswith(p) for p in ALLOWED_PREFIXES):
                     return redirect_uri
             return super().validate_redirect_uri(redirect_uri)
 
@@ -939,9 +1094,7 @@ def _run_http(host: str, port: int) -> None:
         print(f"HTTP mode requires extra deps: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # FLY_APP_NAME is set automatically by Fly.io at runtime; fall back to a
-    # generic placeholder when running locally without deploying.
-    fly_app = os.environ.get("FLY_APP_NAME") or "garmin-mcp-local"
+    fly_app = os.environ.get("FLY_APP_NAME", "garmin-mcp-grabb")
     fly_host = f"{fly_app}.fly.dev"
     issuer_url = os.environ.get("OAUTH_ISSUER_URL", f"https://{fly_host}")
 
@@ -957,28 +1110,46 @@ def _run_http(host: str, port: int) -> None:
               file=sys.stderr)
         sys.exit(1)
 
+    # Optional second client (e.g. ChatGPT connector) for isolation from Claude.
+    extra_clients = []
+    for suffix in ("_2", "_3"):
+        cid = os.environ.get(f"OAUTH_CLIENT_ID{suffix}")
+        csec = os.environ.get(f"OAUTH_CLIENT_SECRET{suffix}")
+        if cid and csec:
+            extra_clients.append((cid, csec, f"Connector{suffix}"))
+
     state_path = Path(os.environ.get("OAUTH_STATE_PATH") or (Path(TOKEN_DIR).parent / "oauth-state.json"))
     state = _OAuthState(state_path)
 
-    # Pre-register the single allowed client. Purge any others (leftover DCR
+    # Pre-register the allowed clients. Purge any others (leftover DCR
     # registrations from before this security tightening).
     from mcp.shared.auth import OAuthClientInformationFull
-    stale = [cid for cid in state.clients if cid != oauth_client_id]
+    allowed_cids = {oauth_client_id, *(c[0] for c in extra_clients)}
+    stale = [cid for cid in state.clients if cid not in allowed_cids]
     for cid in stale:
         print(f"[oauth] purging stale client {cid}", file=sys.stderr)
         state.clients.pop(cid)
-    existing = state.clients.get(oauth_client_id)
-    if existing is None or existing.client_secret != oauth_client_secret:
-        state.clients[oauth_client_id] = OAuthClientInformationFull(
-            client_id=oauth_client_id,
-            client_secret=oauth_client_secret,
-            redirect_uris=[AnyHttpUrl("https://claude.ai/api/mcp/auth_callback")],
-            token_endpoint_auth_method="client_secret_post",
-            grant_types=["authorization_code", "refresh_token"],
-            response_types=["code"],
-            scope="mcp",
-            client_name="Claude Custom Connector",
-        )
+
+    def _upsert(cid, csec, name, redirect_placeholder):
+        existing = state.clients.get(cid)
+        if existing is None or existing.client_secret != csec:
+            state.clients[cid] = OAuthClientInformationFull(
+                client_id=cid,
+                client_secret=csec,
+                redirect_uris=[AnyHttpUrl(redirect_placeholder)],
+                token_endpoint_auth_method="client_secret_post",
+                grant_types=["authorization_code", "refresh_token"],
+                response_types=["code"],
+                scope="mcp",
+                client_name=name,
+            )
+
+    _upsert(oauth_client_id, oauth_client_secret,
+            "Claude Custom Connector", "https://claude.ai/api/mcp/auth_callback")
+    for cid, csec, _name in extra_clients:
+        # Placeholder redirect only for pydantic validation; real URI is
+        # accepted by _lenient_claude_client via prefix allowlist.
+        _upsert(cid, csec, cid, "https://chatgpt.com/connector/oauth/placeholder")
     state.save()
 
     provider = SimpleOAuthProvider(state)
@@ -996,7 +1167,7 @@ def _run_http(host: str, port: int) -> None:
     app = mcp.streamable_http_app()
 
     async def health(_request):
-        return JSONResponse({"status": "ok"})
+        return JSONResponse({"status": "ok", "user_id": USER_ID})
     app.router.add_route("/health", health, methods=["GET"])
 
     uvicorn.run(app, host=host, port=port, log_level="info")
@@ -1012,6 +1183,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     _seed_tokens_from_env()
+
+    print(f"[startup] USER_ID={USER_ID}, TOKEN_DIR={TOKEN_DIR}, transport={args.transport}", file=sys.stderr)
 
     if args.transport == "stdio":
         mcp.run(transport="stdio")

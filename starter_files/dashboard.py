@@ -190,9 +190,31 @@ def q_upcoming(user_id: int, days=7):
 
 @st.cache_data(ttl=15)
 def q_current_week_with_components(user_id: int):
-    """Zwraca plany bieżącego tygodnia z komponentami zgroupowanymi per planned_id."""
+    """Zwraca plany bieżącego tygodnia z komponentami zgroupowanymi per planned_id.
+
+    Auto-migruje brakujące komponenty (splituje `title` po ` + `) — bez tego
+    UI ma tylko caption "brak komponentów" zamiast selectboxów statusu.
+    """
+    from migrate_components import split_title  # type: ignore
+
     with api.connect() as conn:
         week = [dict(r) for r in api.planned.current_week(conn, user_id=user_id)]
+        # 1) Auto-generate components for planned_workouts that have none yet
+        for p in week:
+            existing = list(api.planned.components_for(conn, planned_workout_id=p["id"]))
+            if existing:
+                continue
+            parts = split_title(p.get("title") or "")
+            if not parts:
+                continue
+            for idx, label in enumerate(parts):
+                conn.execute("""
+                    INSERT INTO planned_workout_components
+                        (planned_workout_id, order_idx, label, status_id)
+                    VALUES (?, ?, ?, ?)
+                """, (p["id"], idx, label, p.get("status_id") or 1))
+            conn.commit()
+        # 2) Re-fetch fresh components
         by_planned: dict[int, list[dict]] = {}
         for p in week:
             comps = [dict(c) for c in api.planned.components_for(conn, planned_workout_id=p["id"])]
@@ -212,6 +234,22 @@ def _apply_component_status(component_id: int, planned_id: int, status_key: str,
     q_current_week_with_components.clear()
     q_today.clear()
     # Turso push - best effort, nie przerywaj UI gdy padnie
+    try:
+        from sync import push as _push  # type: ignore
+        _push(verbose=False)
+    except Exception as e:
+        st.warning(f"Push do Turso nieudany: {e}")
+
+
+def _apply_planned_status(planned_id: int, status_key: str, notes: str | None) -> None:
+    """Callback: update parent planned_workout (fallback gdy brak komponentów)."""
+    with api.connect() as conn:
+        api.planned.mark_status(
+            conn, id=planned_id, status_key=status_key, actual_notes=notes or None
+        )
+        conn.commit()
+    q_current_week_with_components.clear()
+    q_today.clear()
     try:
         from sync import push as _push  # type: ignore
         _push(verbose=False)
@@ -448,7 +486,23 @@ def page_overview():
                             if p.get("notes"):
                                 st.caption(f"📝 {p['notes']}")
                             if not comps:
-                                st.caption("_Brak komponentów — uruchom `python db/migrate_components.py` żeby rozbić `title` po ` + `._")
+                                # Fallback: parent-level status control (title puste albo migrate padło)
+                                default_idx_p = status_keys.index(p.get("status_key")) if p.get("status_key") in status_keys else 0
+                                col_p_status, col_p_notes, col_p_btn = st.columns([2, 3, 1])
+                                new_p_status = col_p_status.selectbox(
+                                    "Status", status_keys, index=default_idx_p,
+                                    format_func=lambda k: status_labels[k],
+                                    key=f"pw_status_{cat_key}_{pid}", label_visibility="collapsed",
+                                )
+                                new_p_notes = col_p_notes.text_input(
+                                    "Notatka", value=p.get("actual_notes") or "",
+                                    key=f"pw_notes_{cat_key}_{pid}", placeholder="notatka (opcjonalnie)",
+                                    label_visibility="collapsed",
+                                )
+                                if col_p_btn.button("Zapisz", key=f"pw_save_{cat_key}_{pid}"):
+                                    _apply_planned_status(pid, new_p_status, new_p_notes)
+                                    st.toast(f"✅ {p.get('title','?')[:30]} → {status_labels[new_p_status]}", icon="☁️")
+                                    st.rerun()
                                 continue
                             for c in comps:
                                 cid = c["id"]
@@ -1110,6 +1164,200 @@ def page_life():
 
 
 # ============================================
+# Page: Codzienna rutyna (5-8 min rano, pod aktualne problemy ciała)
+# ============================================
+
+# Wersjonowana lista — edytuj tu żeby zaktualizować rutynę na dashboardzie.
+# Zmiany w rutynie: dopisuj do ROUTINE_CHANGELOG poniżej.
+ROUTINE_VERSION = "v2"
+ROUTINE_UPDATED = "2026-08-16"
+ROUTINE_FOCUS = "PFPS prawe kolano — ITB + stopa P + glute med"
+ROUTINE_TOTAL_MIN = "~5 min"
+
+ROUTINE_EXERCISES = [
+    {
+        "n": 1,
+        "name": "Rolowanie ITB (bok prawego uda)",
+        "time": "1 min",
+        "tool": "Roler",
+        "why": "Rolowanie ITB od 06.08 znosi ból klękania — hipoteza lateral maltracking rzepki. To KLUCZOWE ćwiczenie tej rutyny.",
+        "how": (
+            "Połóż się na LEWYM boku. Podpieraj się lewym łokciem. "
+            "Prawe udo BOCZNIE opieraj na rolerze — od biodra do kolana. "
+            "Powoli przetaczaj się w dół i w górę, ok. 30 sek każdy kierunek. "
+            "**Boli — dobrze, tam gdzie ma boleć.** Nie zatrzymuj na jednym punkcie dłużej niż 5 sek."
+        ),
+        "check": "Powinno boleć w bocznej części prawego uda. Po roll'u wstań i klęknij — powinno być lżej."
+    },
+    {
+        "n": 2,
+        "name": "Rolowanie stopy prawej",
+        "time": "1 min",
+        "tool": "Piłka tenisowa / butelka mrożona",
+        "why": "16.08 przełom — po rolowaniu stopy P klękanie nagle puściło. Nowy trop, testujemy czy powtarzalne.",
+        "how": (
+            "Usiądź na krześle, boso. Piłka (albo mrożona butelka) pod prawą stopą. "
+            "Powoli od pięty do palców — cała podeszwa. Zwolnij i naciskaj mocniej gdy znajdziesz tkliwy punkt. "
+            "Nie omijaj śródstopia i łuku."
+        ),
+        "check": "Powinno łagodnieć z każdą sekundą. Jeśli boli mocno — mniejszy nacisk, ale nie omijaj."
+    },
+    {
+        "n": 3,
+        "name": "SLR prawa (Straight Leg Raise)",
+        "time": "10 powtórzeń (~1 min)",
+        "tool": "Mata",
+        "why": "Kontrola i aktywacja przodu uda BEZ skracania ITB. Utrzymuje siłę w chorej nodze.",
+        "how": (
+            "Leż na plecach. **Lewa noga zgięta w kolanie, stopa na podłodze.** "
+            "**Prawa noga PROSTA, palce ściągnięte na siebie** (napnij przód uda). "
+            "Podnieś prawą nogę na wysokość lewego kolana — **wolno 3 sek** w górę, przytrzymaj 1 sek, **wolno 3 sek** w dół. "
+            "10 powtórzeń. Jeżeli 10 jest za łatwe — zwolnij, nie dokładaj powtórzeń."
+        ),
+        "check": "Powinieneś czuć pracę PRZODU uda prawego. Brak bólu w kolanie."
+    },
+    {
+        "n": 4,
+        "name": "Clamshell prawa (aktywacja tyłu biodra)",
+        "time": "12 powtórzeń (~1 min)",
+        "tool": "Mata",
+        "why": "Prawy tył biodra (glute med) jest słaby — dlatego bok uda (ITB) przejmuje robotę i ciągnie rzepkę bocznie. To źródło problemu.",
+        "how": (
+            "Leż na **LEWYM boku**. Kolana zgięte pod 90°, stopy razem, biodra ułożone jedno nad drugim (nie odchylaj się do tyłu). "
+            "**Nie odrywając stóp od siebie**, otwórz prawe kolano w górę — jakbyś otwierał muszlę. "
+            "Wróć powoli. 12 razy."
+        ),
+        "check": "**MUSISZ czuć palenie w TYLE prawego biodra**, po zewnętrznej stronie pośladka. "
+                 "Jeśli czujesz tylko z przodu biodra — źle robisz, obracasz biodrem do tyłu (odchyl brzuch bardziej do przodu)."
+    },
+    {
+        "n": 5,
+        "name": "Stretch ITB leżąc (finiszer)",
+        "time": "30 sek",
+        "tool": "Mata",
+        "why": "Rozciąga to co przed chwilą zrolowałeś. Utrzymuje efekt.",
+        "how": (
+            "Leż na plecach. **Prawa noga wyprostowana** — przełóż ją PONAD ciałem w lewo, biodro rotuje. "
+            "**Prawe ramię i bark zostają na macie** (nie odrywaj). "
+            "Lewą ręką przyciągnij prawe kolano do siebie. Powinno pociągać BOK prawego uda i biodra. "
+            "Trzymaj 30 sek. Oddychaj spokojnie."
+        ),
+        "check": "Ciągnięcie w bocznej części prawego uda / biodra. Nie w plecach."
+    },
+]
+
+# Kronika zmian rutyny — dopisuj nowe wpisy NA GÓRZE.
+ROUTINE_CHANGELOG = [
+    ("2026-08-16", "v2", "Dodano rolowanie stopy prawej po odkryciu że znosi ból klękania. Total ~5 min."),
+    ("2026-08-06", "v1", "Pierwsza rutyna po przełomie rolowaniem ITB. Odpuszczone TKE, wall sit, roll kwadrycepsu."),
+]
+
+
+def page_routine():
+    st.title("🌅 Codzienna rutyna")
+    st.caption(f"**{ROUTINE_TOTAL_MIN}** rano przed pracą. Wersja `{ROUTINE_VERSION}` (od {ROUTINE_UPDATED}) — fokus: **{ROUTINE_FOCUS}**.")
+
+    st.markdown(
+        "> **Zasada:** 1× każde ćwiczenie, nie 3 serie. "
+        "Powtarzalność ważniejsza niż intensywność. "
+        "Jeśli nie masz czasu na wszystko — zrób **przynajmniej #1 i #2** (rolowanie), reszta to bonus."
+    )
+
+    st.divider()
+    st.markdown("### 📋 Kolejność")
+
+    for ex in ROUTINE_EXERCISES:
+        header = f"**#{ex['n']} · {ex['name']}** — {ex['time']} · {ex['tool']}"
+        with st.expander(header, expanded=(ex['n'] <= 2)):
+            st.markdown(f"**Po co:** {ex['why']}")
+            st.markdown(f"**Jak:** {ex['how']}")
+            st.markdown(f"**Sprawdź:** {ex['check']}")
+
+    st.divider()
+
+    # --- Zapisz dziś ---
+    st.markdown("### ✅ Zapisz jak było dziś")
+    st.caption("Krótki wpis — buduje historię trendu kolana. Dopisz TYLKO gdy coś się zmienia lub coś boli mocniej.")
+
+    with st.form("routine_daily_log", clear_on_submit=True):
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            pain = st.selectbox(
+                "Kolano prawe (klękanie)",
+                options=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                index=2,
+                help="0 = nie boli wcale, 3 = lekki dyskomfort, 5 = wyraźny ból, 8+ = przerwij rutynę i idź do fizjo"
+            )
+        with col2:
+            note = st.text_input(
+                "Co dziś zauważyłeś?",
+                placeholder="np. rolowanie stopy pomogło mocno; klękanie 2/10 rano; ITB roll boli mniej niż wczoraj",
+                help="Opcjonalne. Krótkie zdanie."
+            )
+        submitted = st.form_submit_button("💾 Zapisz do body_state")
+        if submitted:
+            with api.connect() as conn:
+                api.body.state_log(
+                    conn,
+                    user_id=USER_ID,
+                    date=datetime.now().date().isoformat(),
+                    location="kolano_prawe",
+                    pain_0_10=int(pain),
+                    doms=0,
+                    notes=note.strip() or f"Poranna rutyna {ROUTINE_VERSION} zrobiona.",
+                )
+            st.cache_data.clear()
+            st.success(f"✅ Zapisane: kolano_prawe = {pain}/10")
+            st.rerun()
+
+    st.divider()
+
+    # --- Trend kolana (30 dni) ---
+    st.markdown("### 📉 Kolano prawe — trend (30 dni)")
+    body_30 = pd.DataFrame(q_body_state(since="-30 days", user_id=USER_ID))
+    if body_30.empty:
+        st.info("Brak wpisów — zacznij codziennie klikać wyżej.")
+    else:
+        knee = body_30[body_30["location"] == "kolano_prawe"].copy()
+        if knee.empty:
+            st.info("Brak wpisów dla kolano_prawe w ostatnich 30 dniach.")
+        else:
+            knee["date"] = pd.to_datetime(knee["date"])
+            knee_pain = knee[knee["pain_0_10"].notna()].sort_values("date")
+            if not knee_pain.empty:
+                fig = px.line(knee_pain, x="date", y="pain_0_10", markers=True,
+                              labels={"pain_0_10": "Ból 0-10", "date": ""})
+                fig.update_layout(height=220, margin=dict(t=10, b=10, l=10, r=10),
+                                  yaxis=dict(range=[-0.3, 10], dtick=2))
+                st.plotly_chart(fig, use_container_width=True)
+            with st.expander("Ostatnie 10 wpisów", expanded=False):
+                recent = knee.head(10)[["date", "pain_0_10", "notes"]].copy()
+                recent["date"] = recent["date"].dt.strftime("%Y-%m-%d")
+                st.dataframe(recent.rename(columns={
+                    "date": "Data", "pain_0_10": "Ból", "notes": "Notatki"
+                }), hide_index=True, use_container_width=True)
+
+    st.divider()
+
+    # --- Kiedy zmienić rutynę ---
+    st.markdown("### 🔄 Kiedy zmienić rutynę")
+    st.markdown("""
+- **Test diagnostyczny pokazał nowego winowajcę** → dopisz/wymień ćwiczenie pod ten obszar.
+- **7+ dni bez poprawy klękania** (trend płaski) → coś nie działa, zmień akcent.
+- **Fizjo powie inaczej** → posłuchaj fizjo, nie AI.
+- **Nowy ból** w innej okolicy → dopisz ćwiczenie pod tamten obszar (nie usuwaj tego co działa).
+- **Ból pod obciążeniem znika, klękanie zostaje** → rutyna działa na jedną warstwę problemu, może potrzebna USG.
+    """)
+
+    st.divider()
+
+    # --- Historia zmian ---
+    with st.expander("📜 Historia zmian rutyny", expanded=False):
+        for date_str, ver, desc in ROUTINE_CHANGELOG:
+            st.markdown(f"- **{date_str}** `{ver}` — {desc}")
+
+
+# ============================================
 # Page: Nauka (edukacyjna sekcja dla wszystkich — szczegolnie Matiego)
 # ============================================
 
@@ -1214,6 +1462,7 @@ Po ciężkim treningu następnego dnia jest **lepiej** niż leżeć na kanapie.
 
 PAGES = {
     "🏃 Przegląd": page_overview,
+    "🌅 Codzienna rutyna": page_routine,
     "🏃 Bieganie": page_running,
     "💪 Siłownia": page_strength,
     "🏆 Wyścigi": page_races,
