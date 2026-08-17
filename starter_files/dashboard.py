@@ -960,7 +960,7 @@ def page_life():
 
     # ------- Cele tygodnia -------
     st.header(f"🎯 Cele tygodnia — od pon. {week_start}")
-    goals_map = q_goals_week(week_start, user_id=USER_ID)
+    goals_map = q_goals_week(user_id=USER_ID, week_start=week_start)
 
     filled_cats = [c for c in LIFE_CATEGORIES if goals_map.get(c)]
     empty_cats = [c for c in LIFE_CATEGORIES if not goals_map.get(c)]
@@ -1114,7 +1114,7 @@ def page_life():
         limit = st.number_input("Pokaż ostatnie N", min_value=5, max_value=100,
                                  value=20, step=5, key="notes_limit")
 
-    notes = q_notes_recent(limit=int(limit, user_id=USER_ID))
+    notes = q_notes_recent(user_id=USER_ID, limit=int(limit))
     if cat_filter != "wszystkie":
         notes = [n for n in notes if n["category"] == cat_filter]
 
