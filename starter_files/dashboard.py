@@ -960,7 +960,7 @@ def page_life():
 
     # ------- Cele tygodnia -------
     st.header(f"🎯 Cele tygodnia — od pon. {week_start}")
-    goals_map = q_goals_week(user_id=USER_ID, week_start=week_start)
+    goals_map = q_goals_week(week_start, user_id=USER_ID)
 
     filled_cats = [c for c in LIFE_CATEGORIES if goals_map.get(c)]
     empty_cats = [c for c in LIFE_CATEGORIES if not goals_map.get(c)]
@@ -1114,7 +1114,7 @@ def page_life():
         limit = st.number_input("Pokaż ostatnie N", min_value=5, max_value=100,
                                  value=20, step=5, key="notes_limit")
 
-    notes = q_notes_recent(user_id=USER_ID, limit=int(limit))
+    notes = q_notes_recent(limit=int(limit, user_id=USER_ID))
     if cat_filter != "wszystkie":
         notes = [n for n in notes if n["category"] == cat_filter]
 
@@ -1165,113 +1165,92 @@ def page_life():
 
 # ============================================
 # Page: Codzienna rutyna (5-8 min rano, pod aktualne problemy ciała)
+# Zrodlo danych: tabele exercises + routines + routine_exercises
+# (migracja 006). Zmiana rutyny = INSERT nowy routine + active_to
+# na starej. Zero hardkodow.
 # ============================================
 
-# Wersjonowana lista — edytuj tu żeby zaktualizować rutynę na dashboardzie.
-# Zmiany w rutynie: dopisuj do ROUTINE_CHANGELOG poniżej.
-ROUTINE_VERSION = "v2"
-ROUTINE_UPDATED = "2026-08-16"
-ROUTINE_FOCUS = "PFPS prawe kolano — ITB + stopa P + glute med"
-ROUTINE_TOTAL_MIN = "~5 min"
 
-ROUTINE_EXERCISES = [
-    {
-        "n": 1,
-        "name": "Rolowanie ITB (bok prawego uda)",
-        "time": "1 min",
-        "tool": "Roler",
-        "why": "Rolowanie ITB od 06.08 znosi ból klękania — hipoteza lateral maltracking rzepki. To KLUCZOWE ćwiczenie tej rutyny.",
-        "how": (
-            "Połóż się na LEWYM boku. Podpieraj się lewym łokciem. "
-            "Prawe udo BOCZNIE opieraj na rolerze — od biodra do kolana. "
-            "Powoli przetaczaj się w dół i w górę, ok. 30 sek każdy kierunek. "
-            "**Boli — dobrze, tam gdzie ma boleć.** Nie zatrzymuj na jednym punkcie dłużej niż 5 sek."
-        ),
-        "check": "Powinno boleć w bocznej części prawego uda. Po roll'u wstań i klęknij — powinno być lżej."
-    },
-    {
-        "n": 2,
-        "name": "Rolowanie stopy prawej",
-        "time": "1 min",
-        "tool": "Piłka tenisowa / butelka mrożona",
-        "why": "16.08 przełom — po rolowaniu stopy P klękanie nagle puściło. Nowy trop, testujemy czy powtarzalne.",
-        "how": (
-            "Usiądź na krześle, boso. Piłka (albo mrożona butelka) pod prawą stopą. "
-            "Powoli od pięty do palców — cała podeszwa. Zwolnij i naciskaj mocniej gdy znajdziesz tkliwy punkt. "
-            "Nie omijaj śródstopia i łuku."
-        ),
-        "check": "Powinno łagodnieć z każdą sekundą. Jeśli boli mocno — mniejszy nacisk, ale nie omijaj."
-    },
-    {
-        "n": 3,
-        "name": "SLR prawa (Straight Leg Raise)",
-        "time": "10 powtórzeń (~1 min)",
-        "tool": "Mata",
-        "why": "Kontrola i aktywacja przodu uda BEZ skracania ITB. Utrzymuje siłę w chorej nodze.",
-        "how": (
-            "Leż na plecach. **Lewa noga zgięta w kolanie, stopa na podłodze.** "
-            "**Prawa noga PROSTA, palce ściągnięte na siebie** (napnij przód uda). "
-            "Podnieś prawą nogę na wysokość lewego kolana — **wolno 3 sek** w górę, przytrzymaj 1 sek, **wolno 3 sek** w dół. "
-            "10 powtórzeń. Jeżeli 10 jest za łatwe — zwolnij, nie dokładaj powtórzeń."
-        ),
-        "check": "Powinieneś czuć pracę PRZODU uda prawego. Brak bólu w kolanie."
-    },
-    {
-        "n": 4,
-        "name": "Clamshell prawa (aktywacja tyłu biodra)",
-        "time": "12 powtórzeń (~1 min)",
-        "tool": "Mata",
-        "why": "Prawy tył biodra (glute med) jest słaby — dlatego bok uda (ITB) przejmuje robotę i ciągnie rzepkę bocznie. To źródło problemu.",
-        "how": (
-            "Leż na **LEWYM boku**. Kolana zgięte pod 90°, stopy razem, biodra ułożone jedno nad drugim (nie odchylaj się do tyłu). "
-            "**Nie odrywając stóp od siebie**, otwórz prawe kolano w górę — jakbyś otwierał muszlę. "
-            "Wróć powoli. 12 razy."
-        ),
-        "check": "**MUSISZ czuć palenie w TYLE prawego biodra**, po zewnętrznej stronie pośladka. "
-                 "Jeśli czujesz tylko z przodu biodra — źle robisz, obracasz biodrem do tyłu (odchyl brzuch bardziej do przodu)."
-    },
-    {
-        "n": 5,
-        "name": "Stretch ITB leżąc (finiszer)",
-        "time": "30 sek",
-        "tool": "Mata",
-        "why": "Rozciąga to co przed chwilą zrolowałeś. Utrzymuje efekt.",
-        "how": (
-            "Leż na plecach. **Prawa noga wyprostowana** — przełóż ją PONAD ciałem w lewo, biodro rotuje. "
-            "**Prawe ramię i bark zostają na macie** (nie odrywaj). "
-            "Lewą ręką przyciągnij prawe kolano do siebie. Powinno pociągać BOK prawego uda i biodra. "
-            "Trzymaj 30 sek. Oddychaj spokojnie."
-        ),
-        "check": "Ciągnięcie w bocznej części prawego uda / biodra. Nie w plecach."
-    },
-]
+@st.cache_data(ttl=60)
+def q_active_routine(user_id: int):
+    """Zwraca aktualnie obowiazujaca rutyne (dzis wpada w [active_from, active_to])."""
+    today = datetime.now().date().isoformat()
+    with api.connect() as conn:
+        r = conn.execute("""
+            SELECT id, name, focus, total_time_min, active_from, active_to, notes
+              FROM routines
+             WHERE user_id = ?
+               AND active_from <= ?
+               AND (active_to IS NULL OR active_to >= ?)
+             ORDER BY active_from DESC
+             LIMIT 1
+        """, (user_id, today, today)).fetchone()
+        return dict(r) if r else None
 
-# Kronika zmian rutyny — dopisuj nowe wpisy NA GÓRZE.
-ROUTINE_CHANGELOG = [
-    ("2026-08-16", "v2", "Dodano rolowanie stopy prawej po odkryciu że znosi ból klękania. Total ~5 min."),
-    ("2026-08-06", "v1", "Pierwsza rutyna po przełomie rolowaniem ITB. Odpuszczone TKE, wall sit, roll kwadrycepsu."),
-]
+
+@st.cache_data(ttl=60)
+def q_routine_exercises(routine_id: int):
+    with api.connect() as conn:
+        rows = conn.execute("""
+            SELECT re.position, re.duration_or_reps, re.notes AS re_notes,
+                   e.id AS exercise_id, e.key, e.name, e.category, e.tool,
+                   e.description_md, e.youtube_url
+              FROM routine_exercises re
+              JOIN exercises e ON re.exercise_id = e.id
+             WHERE re.routine_id = ?
+             ORDER BY re.position
+        """, (routine_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+@st.cache_data(ttl=60)
+def q_all_routines(user_id: int):
+    with api.connect() as conn:
+        rows = conn.execute("""
+            SELECT id, name, focus, total_time_min, active_from, active_to, notes
+              FROM routines WHERE user_id = ?
+             ORDER BY active_from DESC
+        """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
 
 
 def page_routine():
     st.title("🌅 Codzienna rutyna")
-    st.caption(f"**{ROUTINE_TOTAL_MIN}** rano przed pracą. Wersja `{ROUTINE_VERSION}` (od {ROUTINE_UPDATED}) — fokus: **{ROUTINE_FOCUS}**.")
+
+    routine = q_active_routine(USER_ID)
+    if not routine:
+        st.warning("Brak aktywnej rutyny w bazie. Wejdź w 🏋️ Ćwiczenia → dodaj nową rutynę.")
+        return
+
+    total_min = f"~{routine['total_time_min']} min" if routine.get('total_time_min') else "kilka min"
+    st.caption(
+        f"**{total_min}** rano przed pracą. Rutyna: **{routine['name']}** "
+        f"(od {routine['active_from']}) — fokus: **{routine.get('focus') or 'brak'}**."
+    )
 
     st.markdown(
         "> **Zasada:** 1× każde ćwiczenie, nie 3 serie. "
         "Powtarzalność ważniejsza niż intensywność. "
-        "Jeśli nie masz czasu na wszystko — zrób **przynajmniej #1 i #2** (rolowanie), reszta to bonus."
+        "Jeśli nie masz czasu na wszystko — zrób **przynajmniej pierwsze 2** (zwykle rolowanie), reszta to bonus."
     )
 
     st.divider()
     st.markdown("### 📋 Kolejność")
 
-    for ex in ROUTINE_EXERCISES:
-        header = f"**#{ex['n']} · {ex['name']}** — {ex['time']} · {ex['tool']}"
-        with st.expander(header, expanded=(ex['n'] <= 2)):
-            st.markdown(f"**Po co:** {ex['why']}")
-            st.markdown(f"**Jak:** {ex['how']}")
-            st.markdown(f"**Sprawdź:** {ex['check']}")
+    exercises = q_routine_exercises(routine["id"])
+    if not exercises:
+        st.info("Rutyna nie ma jeszcze przypisanych ćwiczeń.")
+    else:
+        for ex in exercises:
+            hdr = f"**#{ex['position']} · {ex['name']}** — {ex.get('duration_or_reps') or ''} · {ex.get('tool') or ''}"
+            if ex.get('re_notes'):
+                hdr += f"  _({ex['re_notes']})_"
+            with st.expander(hdr, expanded=(ex['position'] <= 2)):
+                st.markdown(ex["description_md"])
+                if ex.get("youtube_url"):
+                    st.link_button("▶️ Zobacz na YouTube", ex["youtube_url"])
+                else:
+                    st.caption("_Brak linku YouTube. Dodaj w zakładce 🏋️ Ćwiczenia._")
 
     st.divider()
 
@@ -1304,7 +1283,7 @@ def page_routine():
                     location="kolano_prawe",
                     pain_0_10=int(pain),
                     doms=0,
-                    notes=note.strip() or f"Poranna rutyna {ROUTINE_VERSION} zrobiona.",
+                    notes=note.strip() or f"Poranna rutyna '{routine['name']}' zrobiona.",
                 )
             st.cache_data.clear()
             st.success(f"✅ Zapisane: kolano_prawe = {pain}/10")
@@ -1353,8 +1332,95 @@ def page_routine():
 
     # --- Historia zmian ---
     with st.expander("📜 Historia zmian rutyny", expanded=False):
-        for date_str, ver, desc in ROUTINE_CHANGELOG:
-            st.markdown(f"- **{date_str}** `{ver}` — {desc}")
+        all_r = q_all_routines(USER_ID)
+        if not all_r:
+            st.caption("Brak historii.")
+        else:
+            for r in all_r:
+                period = r["active_from"]
+                if r["active_to"]:
+                    period += f" → {r['active_to']}"
+                else:
+                    period += " → dziś"
+                st.markdown(f"- **{period}** — **{r['name']}**"
+                            + (f" — _{r['notes']}_" if r.get("notes") else ""))
+
+
+# ============================================
+# Page: Ćwiczenia (katalog exercises + edycja YouTube link)
+# ============================================
+
+
+@st.cache_data(ttl=60)
+def q_all_exercises():
+    with api.connect() as conn:
+        rows = conn.execute("""
+            SELECT id, key, name, name_en, category, tool, description_md, youtube_url, updated_at
+              FROM exercises
+             ORDER BY category, name
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def _apply_exercise_edit(ex_id: int, url: str, name_en: str):
+    with api.connect() as conn:
+        conn.execute(
+            "UPDATE exercises SET youtube_url=?, name_en=?, updated_at=datetime('now') WHERE id=?",
+            (url.strip() or None, name_en.strip() or None, ex_id),
+        )
+        conn.commit()
+    st.cache_data.clear()
+
+
+def page_exercises():
+    st.title("🏋️ Baza ćwiczeń")
+    st.caption("Katalog ćwiczeń używanych w rutynach. Edytuj angielską nazwę i link YouTube — obejrzysz technikę z telefona.")
+
+    all_ex = q_all_exercises()
+    if not all_ex:
+        st.info("Brak ćwiczeń w bazie. Uruchom seed lub dodaj przez SQL / Claude MCP.")
+        return
+
+    # Prosta tabela podglądu na górze
+    df = pd.DataFrame(all_ex)
+    df_view = df[["name", "name_en", "category", "tool"]].copy()
+    df_view["YT"] = df["youtube_url"].apply(lambda u: "✅" if u else "—")
+    df_view["name_en"] = df_view["name_en"].fillna("—")
+    df_view.columns = ["Nazwa PL", "Nazwa EN", "Kategoria", "Narzędzie", "YT"]
+    st.dataframe(df_view, hide_index=True, use_container_width=True, height=min(280, 50 + 35 * len(df_view)))
+
+    st.divider()
+    st.markdown("### 📖 Szczegóły + edycja (EN + YouTube)")
+
+    for ex in all_ex:
+        yt_icon = "✅" if ex.get("youtube_url") else "⚪"
+        en_part = f" · _{ex['name_en']}_" if ex.get("name_en") else ""
+        hdr = f"{yt_icon} **{ex['name']}**{en_part} — {ex.get('category') or '?'} · {ex.get('tool') or '?'}"
+        with st.expander(hdr, expanded=False):
+            st.markdown(ex["description_md"])
+            if ex.get("youtube_url"):
+                st.link_button("▶️ Zobacz na YouTube", ex["youtube_url"])
+            st.divider()
+            with st.form(f"ex_form_{ex['id']}", clear_on_submit=False):
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    new_en = st.text_input(
+                        "Nazwa EN",
+                        value=ex.get("name_en") or "",
+                        placeholder="np. Clamshell (right)",
+                        key=f"en_{ex['id']}",
+                    )
+                with col2:
+                    new_url = st.text_input(
+                        "YouTube URL",
+                        value=ex.get("youtube_url") or "",
+                        placeholder="https://youtube.com/watch?v=... (pusto = usuń)",
+                        key=f"yt_url_{ex['id']}",
+                    )
+                if st.form_submit_button("💾 Zapisz"):
+                    _apply_exercise_edit(ex["id"], new_url, new_en)
+                    st.success("Zapisane. Odśwież żeby zobaczyć.")
+                    st.rerun()
 
 
 # ============================================
@@ -1596,6 +1662,7 @@ Po ciężkim treningu następnego dnia jest **lepiej** niż leżeć na kanapie.
 PAGES = {
     "🏃 Przegląd": page_overview,
     "🌅 Codzienna rutyna": page_routine,
+    "🏋️ Ćwiczenia": page_exercises,
     "📎 Artefakty": page_artifacts,
     "🏃 Bieganie": page_running,
     "💪 Siłownia": page_strength,
