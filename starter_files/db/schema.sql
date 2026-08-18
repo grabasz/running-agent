@@ -16,11 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
     created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
--- Domyślny user seed (id=1). Kolejnych userów dodajesz przez INSERT INTO users, np.:
---   INSERT INTO users (id, name, display_name, garmin_token_dir) VALUES (2, 'kate', 'Kate', 'kate');
--- Nazwa wyświetlana w dashboardzie — konfigurowana per user przez USER<N>_NAME env var.
 INSERT OR IGNORE INTO users (id, name, display_name, garmin_token_dir) VALUES
-    (1, 'user1', 'User 1', 'user1');
+    (1, 'bartek', 'Bartek',   'bartek'),
+    (2, 'mati',   'Mateusz',  'mati');
 
 -- ============================================
 -- GYM
@@ -412,3 +410,65 @@ CREATE INDEX IF NOT EXISTS idx_notes_date ON notes(date);
 CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category);
 CREATE INDEX IF NOT EXISTS idx_notes_task ON notes(related_task_id);
 CREATE INDEX IF NOT EXISTS idx_notes_user_created ON notes(user_id, created_at);
+
+-- ============================================
+-- SESSION ARTIFACTS (Faza 17b — długie markdown-y z sesji Claude)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS session_artifacts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+    date          TEXT NOT NULL,
+    category      TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    summary       TEXT,
+    content_md    TEXT NOT NULL,
+    source        TEXT DEFAULT 'chat',
+    archived      INTEGER DEFAULT 0,
+    created_at    TEXT DEFAULT (datetime('now')),
+    updated_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifacts_user_date     ON session_artifacts(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_artifacts_user_category ON session_artifacts(user_id, category);
+
+-- ============================================
+-- EXERCISES + ROUTINES (Faza 17c — katalog ćwiczeń + rutyny)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS exercises (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    key            TEXT UNIQUE NOT NULL,
+    name           TEXT NOT NULL,
+    name_en        TEXT,
+    category       TEXT,
+    tool           TEXT,
+    description_md TEXT NOT NULL,
+    youtube_url    TEXT,
+    created_at     TEXT DEFAULT (datetime('now')),
+    updated_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS routines (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+    name           TEXT NOT NULL,
+    focus          TEXT,
+    total_time_min INTEGER,
+    active_from    TEXT NOT NULL,
+    active_to      TEXT,
+    notes          TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS routine_exercises (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    routine_id        INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+    exercise_id       INTEGER NOT NULL REFERENCES exercises(id),
+    position          INTEGER NOT NULL,
+    duration_or_reps  TEXT,
+    notes             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_routines_active            ON routines(user_id, active_from);
+CREATE INDEX IF NOT EXISTS idx_routine_exercises_routine  ON routine_exercises(routine_id, position);
