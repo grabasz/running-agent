@@ -88,6 +88,7 @@ DECISION RULES:
 - "kolano / body state / DOMS" (READ)              → DB: db-body-state
 - "boli / czuję dyskomfort / lekki ból" (WRITE)    → DB: db-log-body-state (mobile-friendly UPSERT: location + pain_0_10 + notes)
 - "zapisz notatkę / insight / decyzja / pomysł"    → DB: db-add-note (category: insight/decision/reminder/idea/observation)
+- "co zapisałem / ostatnie notatki / pokaż insights" → DB: db-get-notes (read stream, filter po category / since_days / limit)
 - "dodaj zadanie / TODO / muszę zrobić"            → DB: db-add-task (category: sport/praca/dom/relacje/zdrowie/inne, priority: low/medium/high)
 - "PB w dystansie / historia startów"              → DB: db-race-pbs
 - "sen / HRV / body battery / training readiness"  → GARMIN: get-sleep, get-hrv, get-body-battery, get-training-readiness
@@ -863,6 +864,44 @@ def db_add_note(
         "content_preview": txt[:80] + ("…" if len(txt) > 80 else ""),
         "user_id": USER_ID,
     })
+
+
+@mcp.tool(
+    name="db-get-notes",
+    description="""Fetch recent notes from the stream (insight/decision/reminder/idea/observation).
+
+Args:
+  limit: max notes to return (default 15, max 50).
+  category: optional filter — one of insight/decision/reminder/idea/observation.
+  since_days: only notes newer than N days (default 30, max 365).
+
+Returns: {count, notes: [{id, date, category, content, source, related_run_id, related_task_id, created_at}]} sorted newest-first.
+
+Perfect for mobile: "co ostatnio zapisalem" / "pokaz ostatnie decyzje" / "insights z ostatniego tygodnia"."""
+)
+def db_get_notes(
+    limit: int = 15,
+    category: str | None = None,
+    since_days: int = 30,
+) -> str:
+    limit = max(1, min(int(limit), 50))
+    since_days = max(1, min(int(since_days), 365))
+    since = f"-{since_days} days"
+    sql = ("SELECT id, date, category, content, source, related_run_id, "
+           "related_task_id, created_at FROM notes "
+           "WHERE user_id = ? AND date >= date('now', ?)")
+    params: list = [USER_ID, since]
+    if category:
+        cat = category.strip().lower()
+        if cat not in _ALLOWED_NOTE_CATEGORIES:
+            return _dumps({"status": "error",
+                           "message": f"category must be one of {list(_ALLOWED_NOTE_CATEGORIES)}, got {category!r}"})
+        sql += " AND category = ?"
+        params.append(cat)
+    sql += " ORDER BY date DESC, id DESC LIMIT ?"
+    params.append(limit)
+    rows = _tq(sql, tuple(params))
+    return _dumps({"count": len(rows), "notes": rows, "user_id": USER_ID})
 
 
 @mcp.tool(
