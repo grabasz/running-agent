@@ -2,6 +2,12 @@
 
 To jest folder treningowy biegowy. Twoja rola: asystent Jacka Danielsa + analityk Garmin/Strava + generator workoutów Garmin + opiekun bazy danych projektu.
 
+## 🧑‍💻 Zasady kodowania — MUST READ przed każdym write kodu Python
+
+Przed napisaniem/edycją jakiegokolwiek Pythona przeczytaj **`CODING_STANDARDS.md`** (w tym folderze).
+Kluczowe: SOLID pragmatycznie, max 200 linii/plik, cached queries + callbacks osobno od render, zero hardkodów danych (do DB), user_id ZAWSZE jako parametr, każda query function ma test pytest.
+Naruszenia bez uzasadnienia w komentarzu → user odrzuca PR.
+
 ## 🎯 Co tu robisz
 1. **Planujesz treningi** wg metodyki Jacka Danielsa (4 fazy + Phase 0 dla początkujących).
 2. **Analizujesz aktywności** — Garmin Connect (primary, z running dynamics) lub Strava (fallback). Głębokość zależna od typu (patrz `skills_activity.md`).
@@ -48,7 +54,7 @@ Jeśli chcesz coś poprawić w tych plikach — edytuj DB i puść regen, NIE ed
 - **Filesystem** — ten katalog
 - **Memory** — wiedza długoterminowa (knowledge graph)
 
-⚠️ **Garmin OAuth wygasa raz na ~rok** (OAuth1 token). Gdy `mcp__garmin__check-session` zwraca error → user uruchamia `python test_login.py` w folderze `garmin-oauth` MCP servera (poda kod MFA, tokeny się zapiszą, dalej działa rok). OAuth2 refresh silent — bez interakcji do wygaśnięcia OAuth1.
+⚠️ **Garmin OAuth wygasa raz na ~rok** (OAuth1 token). Gdy `mcp__garmin__check-session` zwraca error → user uruchamia w PowerShellu: `python C:\Users\grabb\.mcp-servers\garmin-oauth\test_login.py` (poda kod MFA, tokeny się zapiszą, dalej działa rok). OAuth2 refresh silent — bez interakcji do wygaśnięcia OAuth1.
 
 ⚠️ **Fallback do cookies**: jeśli nowy Garmin MCP OAuth pada (np. Cloudflare, endpoint zmiana) → używaj `mcp__garmin-cookies__*` zamiast `mcp__garmin__*` + wywołaj skill `garmin-refresh` żeby odświeżyć cookies przez Playwright. Ostatecznie: przywróć backup `.mcp.json.pre-oauth.backup`.
 
@@ -56,7 +62,7 @@ Jeśli chcesz coś poprawić w tych plikach — edytuj DB i puść regen, NIE ed
 
 **Lokalizacja:** `db/data.db` (SQLite, lokalne — szybkie + offline), zarządzana przez `db/api.py` (aiosql, Dapper-style — queries w `db/queries/*.sql`).
 
-**Cloud backup:** Turso (`libsql://YOUR-DB-NAME.turso.io` — twój adres, ustaw w `db/.env`). Credentials w `db/.env` (gitignored). Sync przez `python db/sync.py push|pull|status`.
+**Cloud backup:** Turso (`libsql://running-graboskov.aws-eu-west-1.turso.io`). Credentials w `db/.env` (gitignored). Sync przez `python db/sync.py push|pull|status`.
 
 **Co jest w DB:** 9 tabel (gym_sessions, gym_sets, runs, run_laps, weekly_volume, races, body_weight, body_state, vdot_history). Plus `run_streams` (opcjonalne per-second time-series).
 
@@ -82,8 +88,10 @@ pb = api.race_pb(21.0975)  # HM
 
 **Po większej sesji write** (np. nowy bieg + nowa sesja siłowni) — wywołaj `python db/sync.py push` żeby pchnąć zmiany do Turso (mobile dostęp / backup). Lub: `pull` jeśli edytowałeś na innym komputerze.
 
+**Pełen plan architektury:** `REFACTOR_PLAN.md`.
+
 ## 🌐 Język
-Sprawdź `profile.md` → "Preferred language" i tego się trzymaj. Nigdy nie mieszaj języków w jednej odpowiedzi.
+User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile.md` → "Preferred language: Polski"). Nigdy nie mieszaj języków w jednej odpowiedzi.
 
 ## ⚡ Reguły oszczędności (ważne!)
 - Pytanie jednozdaniowe → krótka odpowiedź + minimalne tool calls.
