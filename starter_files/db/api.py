@@ -12,14 +12,39 @@ Each .sql file in `queries/` is loaded as its own submodule (queries/gym.sql -> 
 SQL function suffixes: `<!` returns lastrowid (INSERT), `^` one row, `$` scalar,
 no suffix = list of rows (sqlite3.Row, dict-like).
 
-Cloud mode: call `api.bootstrap_cloud()` once before any query to pull the latest
-snapshot from Turso into a local replica file (used by the Streamlit Cloud dashboard).
+Cloud mode (Streamlit Cloud, dashboard direct-Turso):
+    Ustaw env TURSO_DATABASE_URL + TURSO_AUTH_TOKEN — api.connect() zwraca
+    libsql connection wrapped w adapter kompatybilny z aiosql (sqlite3.Row-like).
+    Cache queries via @st.cache_data(ttl=60) — Turso hit tylko przy invalidation.
+Local mode:
+    Bez env → sqlite3 na db/data.db (Bartek/skille /run /gym /volume).
 """
 from __future__ import annotations
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 import aiosql
+
+# Regex do konwersji :name -> ? dla libsql (bo libsql nie akceptuje dict params).
+# Nie matchuje '::' (postgres cast) i pomija miejsca po znaku alfanumerycznym/':'.
+_NAMED_PARAM_RE = re.compile(r"(?<![:\w]):(\w+)")
+
+
+def _named_to_positional(sql: str, params: dict):
+    """Konwertuj SQL z :name na ? i buduj tuple wartosci w kolejnosci wystapien."""
+    order: list[str] = []
+
+    def _repl(m):
+        order.append(m.group(1))
+        return "?"
+
+    new_sql = _NAMED_PARAM_RE.sub(_repl, sql)
+    try:
+        values = tuple(params[k] for k in order)
+    except KeyError as e:
+        raise KeyError(f"Missing param {e} for SQL: {sql[:100]}...")
+    return new_sql, values
 
 try:
     from .init_db import DB_PATH, get_connection
@@ -51,13 +76,191 @@ _stats          = _load("stats.sql")
 
 
 # ============================================
+# libsql adapter — aiosql-kompatybilny wrapper dla Turso.
+# Robi z libsql.Connection cos co wyglada jak sqlite3.Connection:
+# - .execute()/.executemany() zwracaja Cursor z .fetchone/.fetchall
+#   dostajacym rows dict-like (indexowane i po nazwie kolumny, .keys()).
+# - .row_factory setowalne (aiosql to robi) - noop, my juz mamy Row-like.
+# - .commit/.rollback/.close - delegowane.
+# ============================================
+
+class _LibsqlRow:
+    """Row dict-like: row[0], row['col'], row.keys() — pasuje do dashboard [dict(r) for r in rows]."""
+    __slots__ = ("_cols", "_data")
+
+    def __init__(self, cols, data):
+        self._cols = cols
+        self._data = tuple(data)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._data[key]
+        try:
+            return self._data[self._cols.index(key)]
+        except ValueError:
+            raise KeyError(key)
+
+    def keys(self):
+        return list(self._cols)
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
+
+    def __repr__(self):
+        return f"Row({dict(zip(self._cols, self._data))!r})"
+
+
+class _LibsqlCursor:
+    """Wrapper cursora libsql: dict-like rows + akceptacja dict params (:name -> ?)."""
+
+    def __init__(self, real_cursor):
+        self._cur = real_cursor
+
+    @property
+    def lastrowid(self):
+        return getattr(self._cur, "lastrowid", None)
+
+    @property
+    def rowcount(self):
+        return getattr(self._cur, "rowcount", -1)
+
+    @property
+    def description(self):
+        return self._cur.description
+
+    def _cols(self):
+        d = self._cur.description
+        return [c[0] for c in d] if d else []
+
+    def execute(self, sql, params=None):
+        if params is None:
+            return _LibsqlCursor(self._cur.execute(sql))
+        if isinstance(params, dict):
+            sql, params = _named_to_positional(sql, params)
+        elif not isinstance(params, (list, tuple)):
+            params = tuple(params)
+        return _LibsqlCursor(self._cur.execute(sql, params))
+
+    def executemany(self, sql, params_list):
+        params_list = list(params_list)
+        if params_list and isinstance(params_list[0], dict):
+            names = _NAMED_PARAM_RE.findall(sql)
+            sql_conv = _NAMED_PARAM_RE.sub("?", sql)
+            converted = [tuple(p[n] for n in names) for p in params_list]
+            return _LibsqlCursor(self._cur.executemany(sql_conv, converted))
+        return _LibsqlCursor(self._cur.executemany(sql, params_list))
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        return None if row is None else _LibsqlRow(self._cols(), row)
+
+    def fetchall(self):
+        cols = self._cols()
+        return [_LibsqlRow(cols, r) for r in self._cur.fetchall()]
+
+    def __iter__(self):
+        # libsql cursor nie jest iterowalny — bierzemy fetchall.
+        cols = self._cols()
+        for r in self._cur.fetchall():
+            yield _LibsqlRow(cols, r)
+
+    def close(self):
+        try:
+            self._cur.close()
+        except Exception:
+            pass
+
+
+class _LibsqlConnAdapter:
+    """Sqlite3-Connection lookalike nad libsql. Uzywane w cloud mode przez api.connect()."""
+
+    def __init__(self, real_conn):
+        object.__setattr__(self, "_c", real_conn)
+
+    def __setattr__(self, k, v):
+        # aiosql moze robic conn.row_factory = sqlite3.Row — noop, mamy juz dict-like rows.
+        if k == "row_factory":
+            return
+        object.__setattr__(self, k, v)
+
+    def execute(self, sql, params=None):
+        if params is None:
+            cur = self._c.execute(sql)
+        else:
+            # libsql wymaga tuple/list — aiosql passuje dict dla ':name' params.
+            if isinstance(params, dict):
+                sql, params = _named_to_positional(sql, params)
+            elif not isinstance(params, (list, tuple)):
+                params = tuple(params)
+            cur = self._c.execute(sql, params)
+        return _LibsqlCursor(cur)
+
+    def executemany(self, sql, params_list):
+        params_list = list(params_list)
+        if params_list and isinstance(params_list[0], dict):
+            names = _NAMED_PARAM_RE.findall(sql)
+            sql_conv = _NAMED_PARAM_RE.sub("?", sql)
+            converted = [tuple(p[n] for n in names) for p in params_list]
+            cur = self._c.executemany(sql_conv, converted)
+        else:
+            cur = self._c.executemany(sql, params_list)
+        return _LibsqlCursor(cur)
+
+    def cursor(self):
+        """aiosql opens cursor via conn.cursor() — return our wrapper."""
+        return _LibsqlCursor(self._c.cursor())
+
+    def commit(self):
+        self._c.commit()
+
+    def rollback(self):
+        try:
+            self._c.rollback()
+        except Exception:
+            # libsql moze nie mieć rollback dla autocommit conn
+            pass
+
+    def close(self):
+        try:
+            self._c.close()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        # fallback dla innych atrybutow libsql
+        return getattr(self._c, name)
+
+
+def _open_libsql():
+    """Otworz swieze polaczenie libsql do Turso."""
+    import libsql
+    url = os.environ["TURSO_DATABASE_URL"]
+    token = os.environ["TURSO_AUTH_TOKEN"]
+    return _LibsqlConnAdapter(libsql.connect(url, auth_token=token))
+
+
+def _is_cloud() -> bool:
+    return bool(os.getenv("TURSO_DATABASE_URL") and os.getenv("TURSO_AUTH_TOKEN"))
+
+
+# ============================================
 # Connection helper (auto-commit / rollback)
 # ============================================
 
 @contextmanager
 def connect():
-    """Open a connection with auto-commit. Use `with api.connect() as conn:`."""
-    conn = get_connection()
+    """Open a connection with auto-commit. Use `with api.connect() as conn:`.
+
+    Cloud mode (TURSO env set) → libsql connection do Turso (adapter aiosql-friendly).
+    Local mode → sqlite3 na db/data.db.
+    """
+    if _is_cloud():
+        conn = _open_libsql()
+    else:
+        conn = get_connection()
     try:
         yield conn
         conn.commit()
@@ -94,49 +297,15 @@ def recompute_pbs():
 
 
 # ============================================
-# Cloud bootstrap (Streamlit Cloud / read-only mirrors)
+# Legacy shim — usuniete bootstrap_cloud().
+# Kod trzymajacy referencje dostanie no-op. Dashboard dostal osobne fix.
 # ============================================
 
-def bootstrap_cloud(force: bool = False) -> Path | None:
-    """If TURSO_DATABASE_URL is set, pull a fresh snapshot from Turso into a
-    local replica file and point DB_PATH at it. Idempotent within a process —
-    pass force=True to re-pull.
+def bootstrap_cloud(force: bool = False) -> None:
+    """Deprecated: dashboard laczy sie bezposrednio z Turso przez libsql adapter
+    w api.connect(). Cache Streamlit (@st.cache_data ttl=60) trzyma latency w ryzach.
 
-    Returns the replica Path, or None when no cloud env is configured (local mode).
+    Ta funkcja to no-op — zachowana dla kompatybilnosci wywolan.
+    Design zmiana 2026-08-19: koniec z replica + sync bootstrap (data-loss incidents).
     """
-    if not os.getenv("TURSO_DATABASE_URL"):
-        return None  # local mode — DB_PATH already points at db/data.db
-
-    global DB_PATH
-    if not force and getattr(bootstrap_cloud, "_done", False):
-        return DB_PATH
-
-    # Import here so local-only installs don't need libsql / sync.py imports at module load.
-    try:
-        from .sync import pull as _pull, LOCAL_DB as _LOCAL_DB
-        from . import init_db as _init_db
-        from . import sync as _sync
-    except ImportError:
-        import sync as _sync  # type: ignore
-        import init_db as _init_db  # type: ignore
-        from sync import pull as _pull  # type: ignore
-
-    # Replica file path: respect RUNNING_DB_PATH if set (e.g. /tmp on Streamlit Cloud),
-    # otherwise default next to db/ as data_replica.db.
-    replica = Path(os.getenv("RUNNING_DB_PATH") or (Path(__file__).parent / "data_replica.db"))
-    replica.parent.mkdir(parents=True, exist_ok=True)
-
-    # Make sync.py write to the replica, not the dev data.db.
-    _sync.LOCAL_DB = replica
-    # Materialise schema first so pull's DELETE/INSERT has tables to target.
-    # reset=True: replica is disposable — wipe any stale schema from a previous deploy
-    # (otherwise a leftover replica file will miss tables added by newer migrations).
-    _init_db.DB_PATH = replica
-    _init_db.init(reset=True)
-
-    _pull(verbose=False)
-
-    DB_PATH = replica
-    _init_db.DB_PATH = replica
-    bootstrap_cloud._done = True  # type: ignore[attr-defined]
-    return replica
+    return None
