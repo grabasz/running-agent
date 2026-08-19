@@ -62,7 +62,7 @@ Jeśli chcesz coś poprawić w tych plikach — edytuj DB i puść regen, NIE ed
 
 **Lokalizacja:** `db/data.db` (SQLite, lokalne — szybkie + offline), zarządzana przez `db/api.py` (aiosql, Dapper-style — queries w `db/queries/*.sql`).
 
-**Cloud backup:** Turso (`libsql://running-graboskov.aws-eu-west-1.turso.io`). Credentials w `db/.env` (gitignored). Sync przez `python db/sync.py push|pull|status`.
+**Cloud primary:** Turso (`libsql://running-graboskov.aws-eu-west-1.turso.io`). Credentials w `db/.env` (gitignored). **Od PR #40 + 19.08 refactor: `api.connect()` pisze DIRECT do Turso** (libsql, auto-load `db/.env`). Lokalny sqlite3 tylko jako fallback gdy brak TURSO env. `sync.py` deprecated dla codziennego flow — zostaje jako `push|pull` do manual backup/recovery.
 
 **Co jest w DB:** 9 tabel (gym_sessions, gym_sets, runs, run_laps, weekly_volume, races, body_weight, body_state, vdot_history). Plus `run_streams` (opcjonalne per-second time-series).
 
@@ -86,7 +86,7 @@ pb = api.race_pb(21.0975)  # HM
 
 **Jak pisać:** zwykle przez skille (`/run`, `/gym`, `/volume`) auto-save. Bezpośrednio dla body_state/vdot/manual race entries.
 
-**Po większej sesji write** (np. nowy bieg + nowa sesja siłowni) — wywołaj `python db/sync.py push` żeby pchnąć zmiany do Turso (mobile dostęp / backup). Lub: `pull` jeśli edytowałeś na innym komputerze.
+**Zapisy idą direct do Turso** (od 19.08 PR #40 + skille refactor). Nie musisz nic robić — `api.connect()` auto-load `db/.env` i pisze przez libsql. Sync.py `push|pull` zostają jako **manual backup / disaster recovery** (nie auto-uzywane).
 
 **Pełen plan architektury:** `REFACTOR_PLAN.md`.
 
@@ -155,5 +155,5 @@ Wskazówka: jeśli dyskusja jest sport-related (bieg/gym), dołącz `related_run
 
 **Ważne:**
 - Zawsze pytaj o kategorię/priorytet gdy niejednoznaczne (max 1 pytanie, potem zapis).
-- Po zapisie zrób `python db/sync.py push --after life` (skille auto-push jak `/run` i `/gym`).
+- Po zapisie NIE MUSISZ nic robić — `api.notes.add()` pisze direct do Turso (od 19.08 refactor).
 - Nie duplikuj notatek — jeśli user powiedział coś podobnego dzisiaj, sprawdź `api.notes.recent(conn, limit=10)` przed dodaniem.
