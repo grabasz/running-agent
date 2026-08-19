@@ -26,25 +26,16 @@ with api.connect() as conn:
     # or: api.weekly_volume.avg_last_n_weeks(conn, weeks=4)
 ```
 
-**STEP 4 — Push to Turso (MANDATORY)**
+**STEP 4 — Writes go direct to Turso (since 2026-08-19, PR #40)**
 
-After DB write, no prompt:
-```
-python db/sync.py push --after=volume
-```
-Print `☁️ Turso: OK` (or the error).
+`api.connect()` uses libsql direct → Turso (auto-loads `db/.env`). Every write
+(`api.weekly_volume.upsert`, `api.notes.add`, etc.) lands in Turso instantly.
+**No `sync.py push` needed.**
 
-### ⚠️ Bugfix: notes/tasks/weekly_goals require a SECOND push
+Print `☁️ Turso: OK` at the end if writes completed successfully.
 
-**The `volume` preset does NOT include `notes`, `tasks`, `weekly_goals`** — those are in the `life` preset. Historical bug (2026-07-14 on `/run`): insights written from analysis got stuck in local SQLite because only `--after=volume` was pushed. Dashboard (which reads from Turso replica) showed nothing.
-
-**Rule:** if during this /volume flow you also wrote to `notes` (e.g. saved an insight about a volume trend via `api.notes.add()`), or touched `tasks` / `weekly_goals`, run a **second push right after the volume one**:
-
-```
-python db/sync.py push --after=life
-```
-
-Both pushes are safe to run back-to-back (~1-2s each). Signal both in the final line: `☁️ Turso: OK (volume + life)`. If only volume was touched, keep the original single push and print `☁️ Turso: OK`.
+**DO NOT call** `python db/sync.py push` — sync.py is deprecated for daily flow
+after the 19.08 incident. It stays only for manual backup / disaster recovery.
 
 **STEP 5** — timing:
 ```

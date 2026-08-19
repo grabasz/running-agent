@@ -1,12 +1,14 @@
 """Callbacks — form submits, on_change handlers.
 
 Zgodnie z CODING_STANDARDS: callbacks osobno od render code. Kazdy callback:
-  1. Modyfikuje DB (INSERT/UPDATE)
+  1. Modyfikuje DB (INSERT/UPDATE) — w cloud mode zapis IDZIE BEZPOSREDNIO do Turso
+     (bo api.connect() zwraca libsql conn). W local mode zapis do sqlite.
   2. Invaliduje cache (queries jak `q_*.clear()`)
-  3. Push do Turso (best-effort, nie przerywa UI)
+
+2026-08-19 refactor: usuniete _push_life_to_turso / _push_artifacts_to_turso —
+niepotrzebne, api.connect() od razu pisze do Turso w cloud mode.
 """
 from __future__ import annotations
-from pathlib import Path
 import streamlit as st
 
 import api  # type: ignore
@@ -14,28 +16,19 @@ import api  # type: ignore
 from dashboard import queries
 
 
-ROOT = Path(__file__).resolve().parent.parent
-
-
 # ============================================
 # planned_workouts + components (Przeglad)
 # ============================================
 
 def _apply_component_status(component_id: int, planned_id: int, status_key: str, notes: str | None) -> None:
-    """Callback: update komponentu, sync parent, push do Turso, unieważnij cache."""
+    """Callback: update komponentu, sync parent, uniewaznij cache."""
     with api.connect() as conn:
         api.planned.mark_component_status(
             conn, id=component_id, status_key=status_key, actual_notes=notes or None
         )
         api.planned.sync_parent_status_from_components(conn, planned_workout_id=planned_id)
-        conn.commit()
     queries.q_current_week_with_components.clear()
     queries.q_today.clear()
-    try:
-        from sync import push as _push  # type: ignore
-        _push(verbose=False)
-    except Exception as e:
-        st.warning(f"Push do Turso nieudany: {e}")
 
 
 def _apply_planned_status(planned_id: int, status_key: str, notes: str | None) -> None:
@@ -44,14 +37,8 @@ def _apply_planned_status(planned_id: int, status_key: str, notes: str | None) -
         api.planned.mark_status(
             conn, id=planned_id, status_key=status_key, actual_notes=notes or None
         )
-        conn.commit()
     queries.q_current_week_with_components.clear()
     queries.q_today.clear()
-    try:
-        from sync import push as _push  # type: ignore
-        _push(verbose=False)
-    except Exception as e:
-        st.warning(f"Push do Turso nieudany: {e}")
 
 
 # ============================================
@@ -65,16 +52,6 @@ def _invalidate_life_cache():
     queries.q_notes_recent.clear()
 
 
-def _push_life_to_turso():
-    """Best-effort push tabel Rozkmin."""
-    try:
-        from sync import push as _push  # type: ignore
-        _push(verbose=False, tables=["tasks", "weekly_goals", "notes"],
-              skip_empty=False)
-    except Exception as e:
-        st.warning(f"Push do Turso: {e}")
-
-
 def _cb_goal_upsert(week_start: str, category: str, key: str):
     val = (st.session_state.get(key) or "").strip()
     if not val:
@@ -83,7 +60,6 @@ def _cb_goal_upsert(week_start: str, category: str, key: str):
         api.goals.upsert(conn, week_start=week_start, category=category,
                          goal=val, status=None)
     _invalidate_life_cache()
-    _push_life_to_turso()
 
 
 def _cb_goal_toggle(goal_id: int, current_status: str):
@@ -93,7 +69,6 @@ def _cb_goal_toggle(goal_id: int, current_status: str):
         else:
             api.goals.reopen(conn, id=goal_id)
     _invalidate_life_cache()
-    _push_life_to_turso()
 
 
 def _cb_task_toggle(task_id: int, current_status: str):
@@ -103,21 +78,35 @@ def _cb_task_toggle(task_id: int, current_status: str):
         else:
             api.tasks.reopen(conn, id=task_id)
     _invalidate_life_cache()
-    _push_life_to_turso()
 
 
 def _cb_task_delete(task_id: int):
     with api.connect() as conn:
         api.tasks.delete(conn, id=task_id)
     _invalidate_life_cache()
-    _push_life_to_turso()
 
 
 def _cb_note_delete(note_id: int):
     with api.connect() as conn:
         api.notes.delete(conn, id=note_id)
     _invalidate_life_cache()
-    _push_life_to_turso()
+
+
+# ============================================
+# Legacy no-op shims (2026-08-19 refactor)
+# ============================================
+# W nowej architekturze api.connect() zapisuje BEZPOSREDNIO do Turso w cloud mode,
+# wiec explicit push jest niepotrzebny. Shim zostaje zeby pages/artifacts.py i
+# pages/life.py nie wymagaly zmian.
+
+def _push_life_to_turso():
+    """No-op — zapis do Turso odbywa sie inline w api.connect() w cloud mode."""
+    return None
+
+
+def _push_artifacts_to_turso():
+    """No-op — zapis do Turso odbywa sie inline w api.connect() w cloud mode."""
+    return None
 
 
 # ============================================
@@ -130,21 +119,4 @@ def _apply_exercise_edit(ex_id: int, url: str, name_en: str):
             "UPDATE exercises SET youtube_url=?, name_en=?, updated_at=datetime('now') WHERE id=?",
             (url.strip() or None, name_en.strip() or None, ex_id),
         )
-        conn.commit()
     st.cache_data.clear()
-
-
-# ============================================
-# Artefakty — best-effort Turso push
-# ============================================
-
-def _push_artifacts_to_turso():
-    """Best-effort push po zmianach (add/archive)."""
-    try:
-        import subprocess, sys as _sys
-        subprocess.Popen(
-            [_sys.executable, str(ROOT / "db" / "sync.py"), "push"],
-            cwd=str(ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        pass

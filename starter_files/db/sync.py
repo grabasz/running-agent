@@ -1,17 +1,29 @@
-"""Two-way sync between local SQLite (data.db) and Turso cloud.
+"""DEPRECATED for daily flow after 2026-08-19.
 
-Strategy: keep aiosql + sqlite3 locally (fast, offline, no row_factory issues),
-push/pull manually via libsql client. Call after every write operation to keep
-cloud current.
+Historia: przed PR #40 dashboard uzywal replica sqlite + sync.push/pull do Turso.
+Skille tez pisaly do lokalnego sqlite i push'owaly. 19.08 rano push z pustego
+lokal wywalil produkcyjne planned_workouts/notes/tasks na Turso (odzyskane
+przez PITR).
 
-Usage:
-    python db/sync.py push     # local -> Turso (after writes)
-    python db/sync.py pull     # Turso -> local (use on a new machine)
+Po PR #40 (dashboard direct-Turso) i tym refactorze (skille direct-Turso przez
+api.py auto-load .env), sync.py NIE JEST juz uzywany w codziennym flow.
+Zostaje dla:
+- Manual backup: `python db/sync.py push` (z --force override safety)
+- Migration between instances: `python db/sync.py pull` on new machine
+- Emergency recovery from local backup
+
+NIE wywoluj sync.py z skille ani hookow. Wszystkie zapisy ida direct do Turso
+przez api.connect() z libsql gdy TURSO env vars sa set (auto-load z db/.env).
+
+Original design docs (do referencji):
+    Two-way sync between local SQLite (data.db) and Turso cloud.
+    Strategy: keep aiosql + sqlite3 locally (fast, offline, no row_factory issues),
+    push/pull manually via libsql client.
+
+Usage (manual, defensywne):
+    python db/sync.py push     # local -> Turso (rzadkie: manualny backup)
+    python db/sync.py pull     # Turso -> local (nowa maszyna, disaster recovery)
     python db/sync.py status   # compare row counts both ways
-
-Or from Python:
-    from db.sync import push, pull, status
-    push()  # silent on success, prints diffs
 """
 from __future__ import annotations
 import os
@@ -74,13 +86,62 @@ TABLE_ORDER = [
     "tasks",             # self-ref parent_id (safe as-is: NULL parents first via INSERT order in single table)
     "weekly_goals",      # no FK
     "notes",             # -> tasks, runs, gym_sessions
-    # Session artifacts (Faza 17b) — długie markdown-y
+    # Session artifacts (Faza 17b) — długie markdown-y z sesji AI
     "session_artifacts",
     # Exercises + Routines (Faza 17c) — katalog ćwiczeń + rutyny
     "exercises",
     "routines",
     "routine_exercises", # -> routines, exercises
 ]
+
+
+def _split_sql(sql: str) -> list[str]:
+    """Split SQL script into individual statements. Strips -- comments, splits on ;."""
+    lines = []
+    for line in sql.split("\n"):
+        code = line.split("--", 1)[0]
+        if code.strip():
+            lines.append(code)
+    cleaned = "\n".join(lines)
+    return [s.strip() for s in cleaned.split(";") if s.strip()]
+
+
+def ensure_turso_schema(verbose: bool = True) -> int:
+    """Ensure Turso has all tables/indexes from schema.sql. Idempotent (uses IF NOT EXISTS).
+
+    Called automatically at start of push()/pull() so any new migration is auto-applied
+    to Turso next time sync runs. No need to manually CREATE TABLE on Turso.
+
+    Returns count of statements executed.
+    """
+    schema_path = HERE / "schema.sql"
+    if not schema_path.exists():
+        if verbose:
+            print(f"  [ensure_schema] no schema.sql at {schema_path} — skip")
+        return 0
+    statements = _split_sql(schema_path.read_text(encoding="utf-8"))
+    turso = _turso()
+    executed = 0
+    skipped = 0
+    try:
+        for stmt in statements:
+            try:
+                turso.execute(stmt)
+                executed += 1
+            except Exception as e:
+                # Skip INSERT OR IGNORE that violates FK etc.; log CREATE TABLE errors.
+                if verbose and ("CREATE" in stmt.upper() or "PRAGMA" in stmt.upper()):
+                    print(f"  [ensure_schema] SKIP: {str(e)[:80]}")
+                skipped += 1
+        turso.commit()
+        if verbose:
+            print(f"  [ensure_schema] {executed} statements OK, {skipped} skipped")
+    finally:
+        try:
+            turso.close()
+        except Exception:
+            pass
+    return executed
 
 
 def _is_stream_error(exc: BaseException) -> bool:
@@ -163,6 +224,9 @@ def push(verbose: bool = True, tables: list[str] | None = None,
     """
     if not LOCAL_DB.exists():
         raise RuntimeError(f"Local DB not found at {LOCAL_DB}")
+
+    # Auto-create any missing tables on Turso before DELETE/INSERT (safety net).
+    ensure_turso_schema(verbose=verbose)
 
     local = sqlite3.connect(LOCAL_DB)
     local.row_factory = sqlite3.Row

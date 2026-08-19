@@ -104,31 +104,17 @@ After use, delete `db/_tmp_garmin.json` (Bash: `rm db/_tmp_garmin.json` or Files
 
 ---
 
-## STEP 6 — Push to Turso (MANDATORY, at the end)
+## STEP 6 — Writes go direct to Turso (since 2026-08-19, PR #40)
 
-Always after a DB write — no user prompt:
+`api.connect()` uses libsql direct → Turso (auto-loads `db/.env`). Every write
+(`api.runs.add`, `api.run_laps.add`, `api.notes.add`, `mark_status` etc.) lands
+in Turso instantly. **No `sync.py push` needed.**
 
-```
-python db/sync.py push --after=run
-```
+Print `☁️ Turso: OK` at the end if writes completed successfully.
 
-The `--after=run` preset pushes only touched tables (runs, run_laps, planned_workouts, planned_workout_components) — ~1-2s instead of ~5-8s for full sync.
-
-At the end print briefly: `☁️ Turso: OK` (or the error + note that local changes remain for retry).
-
-Same applies to `mark_status` on `planned_workouts` (auto-link from a saved run / status update). Goal: mobile / dashboard stay current without reminders.
-
-### ⚠️ Bugfix: notes/tasks/weekly_goals require a SECOND push
-
-**The `run` preset does NOT include `notes`, `tasks`, `weekly_goals`** — those are in the `life` preset. Historical bug (2026-07-14): notes written from the /run analysis got stuck in local SQLite because only `--after=run` was pushed. Dashboard (which reads from Turso replica) showed nothing.
-
-**Rule:** if during this /run flow you also wrote to `notes` (e.g. saved insights linked to `run_id` via `api.notes.add()`), or touched `tasks` / `weekly_goals`, run a **second push right after the run one**:
-
-```
-python db/sync.py push --after=life
-```
-
-Both pushes are safe to run back-to-back (~1-2s each). Signal both in the final line: `☁️ Turso: OK (run + life)`. If only run was touched, keep the original single push and print `☁️ Turso: OK`.
+**DO NOT call** `python db/sync.py push` — sync.py is deprecated for daily flow
+after the 19.08 incident (empty local push wiped Turso). It stays only for
+manual backup / disaster recovery.
 
 ---
 
