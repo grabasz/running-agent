@@ -26,6 +26,19 @@ from contextlib import contextmanager
 from pathlib import Path
 import aiosql
 
+# Auto-load db/.env przy imporcie modulu — zeby skille (/run, /gym, /volume itd.)
+# automatycznie widzialy TURSO_DATABASE_URL bez rownczesnego source'owania env.
+# Po tym: import api -> connect() automatycznie idzie direct do Turso (libsql)
+# zamiast do lokalnego sqlite3. Sync.py jest wtedy niepotrzebny w codziennym flow.
+# Na Streamlit Cloud env przychodza przez st.secrets (dotenv no-op bo brak .env).
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).parent / ".env"
+    if _env_path.exists():
+        load_dotenv(_env_path)
+except ImportError:
+    pass  # dotenv opcjonalny — bez niego dziala fallback na sqlite3 local
+
 # Regex do konwersji :name -> ? dla libsql (bo libsql nie akceptuje dict params).
 # Nie matchuje '::' (postgres cast) i pomija miejsca po znaku alfanumerycznym/':'.
 _NAMED_PARAM_RE = re.compile(r"(?<![:\w]):(\w+)")

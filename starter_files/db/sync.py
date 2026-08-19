@@ -1,17 +1,29 @@
-"""Two-way sync between local SQLite (data.db) and Turso cloud.
+"""DEPRECATED for daily flow after 2026-08-19.
 
-Strategy: keep aiosql + sqlite3 locally (fast, offline, no row_factory issues),
-push/pull manually via libsql client. Call after every write operation to keep
-cloud current.
+Historia: przed PR #40 dashboard uzywal replica sqlite + sync.push/pull do Turso.
+Skille tez pisaly do lokalnego sqlite i push'owaly. 19.08 rano push z pustego
+lokal wywalil produkcyjne planned_workouts/notes/tasks na Turso (odzyskane
+przez PITR).
 
-Usage:
-    python db/sync.py push     # local -> Turso (after writes)
-    python db/sync.py pull     # Turso -> local (use on a new machine)
+Po PR #40 (dashboard direct-Turso) i tym refactorze (skille direct-Turso przez
+api.py auto-load .env), sync.py NIE JEST juz uzywany w codziennym flow.
+Zostaje dla:
+- Manual backup: `python db/sync.py push` (z --force override safety)
+- Migration between instances: `python db/sync.py pull` on new machine
+- Emergency recovery from local backup
+
+NIE wywoluj sync.py z skille ani hookow. Wszystkie zapisy ida direct do Turso
+przez api.connect() z libsql gdy TURSO env vars sa set (auto-load z db/.env).
+
+Original design docs (do referencji):
+    Two-way sync between local SQLite (data.db) and Turso cloud.
+    Strategy: keep aiosql + sqlite3 locally (fast, offline, no row_factory issues),
+    push/pull manually via libsql client.
+
+Usage (manual, defensywne):
+    python db/sync.py push     # local -> Turso (rzadkie: manualny backup)
+    python db/sync.py pull     # Turso -> local (nowa maszyna, disaster recovery)
     python db/sync.py status   # compare row counts both ways
-
-Or from Python:
-    from db.sync import push, pull, status
-    push()  # silent on success, prints diffs
 """
 from __future__ import annotations
 import os

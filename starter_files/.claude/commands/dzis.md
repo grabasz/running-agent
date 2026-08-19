@@ -79,15 +79,14 @@ Jak w `/run` i `/silownia` — automatycznie zapisz odczucia do `body_state` prz
 
 ---
 
-## KROK 4 — Push do Turso (OBOWIĄZKOWY, na końcu każdej zmiany)
+## KROK 4 — Zapisy idą direct do Turso (od 2026-08-19, PR #40)
 
-Po każdym write do DB (`mark_component_status`, `mark_status`, `sync_parent_status_from_components`) — bez pytania:
+`api.connect()` używa libsql direct → Turso (auto-load `db/.env`). Każdy write
+(`mark_component_status`, `mark_status`, `sync_parent_status_from_components`)
+trafia natychmiast do Turso, bez pośredniego lokalnego sqlite i bez `sync push`.
 
-```
-python db/sync.py push
-```
-
-Wypisz `☁️ Turso: OK` (lub błąd). Nie blokuj reszty odpowiedzi jeśli push padnie (offline / creds).
+**NIE wywołuj** `python db/sync.py push` — sync.py deprecated dla codziennego flow.
+Zostaje tylko do manual backup / disaster recovery.
 
 ---
 

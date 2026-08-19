@@ -72,31 +72,16 @@ rm db/_tmp_silownia.json
 
 ---
 
-## STEP 5 — Push to Turso (MANDATORY)
+## STEP 5 — Writes go direct to Turso (since 2026-08-19, PR #40)
 
-At the end, no prompt:
+`api.connect()` uses libsql direct → Turso (auto-loads `db/.env`). Every write
+(`api.gym.session_add`, `api.gym.set_add`, `mark_status`, `api.notes.add`, etc.)
+lands in Turso instantly. **No `sync.py push` needed.**
 
-```
-python db/sync.py push --after=gym
-```
+Print `☁️ Turso: OK` at the end if writes completed successfully.
 
-The `--after=gym` preset pushes only touched tables (gym_sessions, gym_sets, planned_workouts, planned_workout_components).
-
-Print `☁️ Turso: OK` (or the error). Do not block the rest of the response on push failure.
-
-### ⚠️ Bugfix: notes/tasks/weekly_goals require a SECOND push
-
-**The `gym` preset does NOT include `notes`, `tasks`, `weekly_goals`** — those are in the `life` preset. Historical bug (2026-07-14 on `/run`): insights linked to a session got stuck in local SQLite because only `--after=gym` was pushed. Dashboard (which reads from Turso replica) showed nothing.
-
-**Rule:** if during this /gym flow you also wrote to `notes` (e.g. saved a coach's note linked to `session_id` via `api.notes.add()`), or touched `tasks` / `weekly_goals`, run a **second push right after the gym one**:
-
-```
-python db/sync.py push --after=life
-```
-
-Both pushes are safe to run back-to-back (~1-2s each). Signal both in the final line: `☁️ Turso: OK (gym + life)`. If only gym was touched, keep the original single push and print `☁️ Turso: OK`.
-
-Note: `body_state` writes (via `log-body`) also **do not** land in either preset — they belong to `--after=body`. Add a third push in that case, or use full `python db/sync.py push`.
+**DO NOT call** `python db/sync.py push` — sync.py is deprecated for daily flow
+after the 19.08 incident. It stays only for manual backup / disaster recovery.
 
 ---
 
