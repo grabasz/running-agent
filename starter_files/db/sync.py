@@ -51,6 +51,8 @@ def _row_count(conn, table: str) -> int:
 # Table dependency order: parents first, then dependents (matters for FK constraints).
 # Used by push/pull to avoid FK violations during DELETE+INSERT cycles.
 TABLE_ORDER = [
+    # Foundation
+    "users",             # multi-tenant root (Faza 18)
     # Lookups (no FK deps)
     "workout_statuses",
     "workout_types",
@@ -72,7 +74,62 @@ TABLE_ORDER = [
     "tasks",             # self-ref parent_id (safe as-is: NULL parents first via INSERT order in single table)
     "weekly_goals",      # no FK
     "notes",             # -> tasks, runs, gym_sessions
+    # Session artifacts (Faza 17b) — długie markdown-y z sesji AI
+    "session_artifacts",
+    # Exercises + Routines (Faza 17c) — katalog ćwiczeń + rutyny
+    "exercises",
+    "routines",
+    "routine_exercises", # -> routines, exercises
 ]
+
+
+def _split_sql(sql: str) -> list[str]:
+    """Split SQL script into individual statements. Strips -- comments, splits on ;."""
+    lines = []
+    for line in sql.split("\n"):
+        code = line.split("--", 1)[0]
+        if code.strip():
+            lines.append(code)
+    cleaned = "\n".join(lines)
+    return [s.strip() for s in cleaned.split(";") if s.strip()]
+
+
+def ensure_turso_schema(verbose: bool = True) -> int:
+    """Ensure Turso has all tables/indexes from schema.sql. Idempotent (uses IF NOT EXISTS).
+
+    Called automatically at start of push()/pull() so any new migration is auto-applied
+    to Turso next time sync runs. No need to manually CREATE TABLE on Turso.
+
+    Returns count of statements executed.
+    """
+    schema_path = HERE / "schema.sql"
+    if not schema_path.exists():
+        if verbose:
+            print(f"  [ensure_schema] no schema.sql at {schema_path} — skip")
+        return 0
+    statements = _split_sql(schema_path.read_text(encoding="utf-8"))
+    turso = _turso()
+    executed = 0
+    skipped = 0
+    try:
+        for stmt in statements:
+            try:
+                turso.execute(stmt)
+                executed += 1
+            except Exception as e:
+                # Skip INSERT OR IGNORE that violates FK etc.; log CREATE TABLE errors.
+                if verbose and ("CREATE" in stmt.upper() or "PRAGMA" in stmt.upper()):
+                    print(f"  [ensure_schema] SKIP: {str(e)[:80]}")
+                skipped += 1
+        turso.commit()
+        if verbose:
+            print(f"  [ensure_schema] {executed} statements OK, {skipped} skipped")
+    finally:
+        try:
+            turso.close()
+        except Exception:
+            pass
+    return executed
 
 
 def _is_stream_error(exc: BaseException) -> bool:
@@ -155,6 +212,9 @@ def push(verbose: bool = True, tables: list[str] | None = None,
     """
     if not LOCAL_DB.exists():
         raise RuntimeError(f"Local DB not found at {LOCAL_DB}")
+
+    # Auto-create any missing tables on Turso before DELETE/INSERT (safety net).
+    ensure_turso_schema(verbose=verbose)
 
     local = sqlite3.connect(LOCAL_DB)
     local.row_factory = sqlite3.Row
