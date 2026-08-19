@@ -10,16 +10,20 @@ import streamlit as st
 import api  # type: ignore
 
 
-@st.cache_resource(show_spinner="Pobieram dane z Turso…")
+@st.cache_resource(show_spinner="Ping Turso…")
 def bootstrap_once():
-    """Run once per Streamlit session. In cloud mode pulls fresh snapshot
-    from Turso; in local mode returns None (data.db is already the source).
+    """Sanity-check Turso connectivity once per Streamlit session.
 
-    Returns dict: {ok: bool, replica: Path|None, error: str|None}.
-    Wrapped so a Turso outage doesn't crash the whole app before UI renders.
+    Legacy nazwa — od 2026-08-19 dashboard laczy sie bezposrednio z Turso
+    (bez replica/pull), wiec ta funkcja robi tylko `SELECT 1` zeby wykryc
+    zerwane creds / brak sieci PRZED renderem stron.
+
+    Returns {ok, replica: None, error}.
     """
     try:
-        return {"ok": True, "replica": api.bootstrap_cloud(), "error": None}
+        with api.connect() as conn:
+            conn.execute("SELECT 1").fetchone()
+        return {"ok": True, "replica": None, "error": None}
     except Exception as e:
         return {"ok": False, "replica": None, "error": f"{type(e).__name__}: {e}"}
 

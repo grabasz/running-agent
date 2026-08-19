@@ -1,27 +1,28 @@
 """Streamlit dashboard for the running project — thin entry point.
 
-Struktura modularna (od refactor/dashboard-modules):
+Struktura modularna:
   dashboard/
-    auth.py       — password gate + Turso bootstrap
+    auth.py       — password gate + Turso ping
     utils.py      — session_state accessors
     constants.py  — LIFE_*, NOTE_*, ARTIFACT_CATEGORIES, VDOT_CAL_OFFSET
     helpers.py    — fmt_pace, fmt_time, daniels_race_time, monday_iso
     queries.py    — @st.cache_data q_*
-    callbacks.py  — _apply_*, _cb_*, _push_*
+    callbacks.py  — _apply_*, _cb_*
     pages/        — po jednej zakladce w pliku
 
 Run locally:
     streamlit run dashboard.py
 
-Deploy on Streamlit Cloud (https://share.streamlit.io):
+Deploy on Streamlit Cloud:
   - Main file: dashboard.py
   - Secrets (TOML): TURSO_DATABASE_URL + TURSO_AUTH_TOKEN
-  - Na cold start apka pulluje snapshot z Turso do lokalnej repliki.
+  - Dashboard laczy sie BEZPOSREDNIO z Turso (libsql), cache 60s per query.
+    Zero replika, zero bootstrap-pull-init (2026-08-19 refactor po incident'ie
+    utraty danych przez sync-based mirror).
 """
 from __future__ import annotations
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import streamlit as st
@@ -30,7 +31,7 @@ ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))       # zeby `import dashboard.xxx` dzialalo
 sys.path.insert(0, str(ROOT / "db"))
 
-# Bridge Streamlit Cloud secrets -> environment vars so db.api / db.sync pick them up.
+# Bridge Streamlit Cloud secrets -> environment vars so db.api pick them up.
 # On localhost st.secrets is empty and this is a no-op.
 try:
     for _key in ("TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"):
@@ -38,11 +39,6 @@ try:
             os.environ[_key] = st.secrets[_key]
 except Exception:
     pass  # no secrets.toml — local sqlite mode
-
-# Point the bootstrap replica at a writable tmp dir (Streamlit Cloud's working
-# dir is ephemeral but /tmp is fine; locally we get a tmp file too, harmless).
-if os.getenv("TURSO_DATABASE_URL") and not os.getenv("RUNNING_DB_PATH"):
-    os.environ["RUNNING_DB_PATH"] = str(Path(tempfile.gettempdir()) / "running_replica.db")
 
 # Overridable via env for self-hosted instances (e.g. DASHBOARD_TITLE="Mati Running")
 DASHBOARD_TITLE = os.getenv("DASHBOARD_TITLE", "Running Dashboard")
@@ -65,10 +61,10 @@ if not check_password(DASHBOARD_TITLE):
 
 _BOOT = bootstrap_once()
 if not _BOOT["ok"]:
-    st.error(f"❌ Nie mogę pobrać danych z Turso.\n\n**Błąd:** `{_BOOT['error']}`")
+    st.error(f"❌ Nie mogę połączyć się z Turso.\n\n**Błąd:** `{_BOOT['error']}`")
     st.caption(
         "Możliwe przyczyny: chwilowa niedostępność Turso, wygasły token, sieć. "
-        "Klik retry pobierze ponownie."
+        "Klik retry ponowi połączenie."
     )
     c1, c2 = st.columns([1, 4])
     if c1.button("🔄 Spróbuj ponownie", type="primary"):
@@ -78,8 +74,7 @@ if not _BOOT["ok"]:
     c2.caption("_Jeśli błąd wraca — sprawdź `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` w Streamlit secrets._")
     st.stop()
 
-_REPLICA = _BOOT["replica"]
-_CLOUD_MODE = _REPLICA is not None
+_CLOUD_MODE = bool(os.getenv("TURSO_DATABASE_URL") and os.getenv("TURSO_AUTH_TOKEN"))
 
 from dashboard.pages.overview import page_overview
 from dashboard.pages.routine import page_routine
@@ -113,14 +108,12 @@ with st.sidebar:
     page = st.radio("Nawigacja", list(PAGES.keys()), label_visibility="collapsed")
     st.divider()
     if _CLOUD_MODE:
-        st.caption(f"☁️ Turso replica: `{Path(_REPLICA).name}`")
+        st.caption("☁️ Turso live (direct, cache 60s)")
     else:
         st.caption("💾 DB: `db/data.db` (local)")
     if st.button("🔄 Odśwież dane (clear cache)"):
         st.cache_data.clear()
-        if _CLOUD_MODE:
-            st.cache_resource.clear()
-            api.bootstrap_cloud(force=True)
+        st.cache_resource.clear()
         st.rerun()
     if st.button("🚪 Wyloguj"):
         for k in ("auth_ok", "user_id", "user_name"):
