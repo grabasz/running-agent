@@ -51,6 +51,8 @@ def _row_count(conn, table: str) -> int:
 # Table dependency order: parents first, then dependents (matters for FK constraints).
 # Used by push/pull to avoid FK violations during DELETE+INSERT cycles.
 TABLE_ORDER = [
+    # Foundation
+    "users",             # multi-tenant root (Faza 18)
     # Lookups (no FK deps)
     "workout_statuses",
     "workout_types",
@@ -72,6 +74,12 @@ TABLE_ORDER = [
     "tasks",             # self-ref parent_id (safe as-is: NULL parents first via INSERT order in single table)
     "weekly_goals",      # no FK
     "notes",             # -> tasks, runs, gym_sessions
+    # Session artifacts (Faza 17b) — długie markdown-y
+    "session_artifacts",
+    # Exercises + Routines (Faza 17c) — katalog ćwiczeń + rutyny
+    "exercises",
+    "routines",
+    "routine_exercises", # -> routines, exercises
 ]
 
 
