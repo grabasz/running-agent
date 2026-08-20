@@ -49,6 +49,7 @@ DECISION RULES:
 - "boli / czuję dyskomfort / lekki ból" (WRITE)    → DB: db-log-body-state (mobile-friendly UPSERT: location + pain_0_10 + notes)
 - "zapisz notatkę / insight / decyzja / pomysł"    → DB: db-add-note (category: insight/decision/reminder/idea/observation)
 - "co zapisałem / ostatnie notatki / pokaż insights" → DB: db-get-notes (read stream, filter po category / since_days / limit)
+- "komentarze z treningów / jak mi szło / co zapisałeś po biegach" → DB: db-get-workout-notes (actual_notes z planned_workouts, NIE notes-stream)
 - "dodaj zadanie / TODO / muszę zrobić"            → DB: db-add-task (category: sport/praca/dom/relacje/zdrowie/inne, priority: low/medium/high)
 - "dodaj ćwiczenie / nowe ćwiczenie / zapisz ćwiczenie X" → DB: db-add-exercise (category: rolowanie/aktywacja/stretch/wzmocnienie/kardio)
 - "PB w dystansie / historia startów"              → DB: db-race-pbs

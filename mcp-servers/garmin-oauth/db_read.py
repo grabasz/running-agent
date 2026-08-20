@@ -174,3 +174,50 @@ Perfect for mobile: "co ostatnio zapisalem" / "pokaz ostatnie decyzje" / "insigh
         params.append(limit)
         rows = _tq(sql, tuple(params))
         return _dumps({"count": len(rows), "notes": rows, "user_id": USER_ID})
+
+    @mcp.tool(
+        name="db-get-workout-notes",
+        description="""Fetch komentarze (actual_notes) z ostatnich planowanych treningow ktore user zapisal po ich wykonaniu.
+
+To NIE jest ogolny notes-stream (db-get-notes) — to sa konkretne uwagi do treningow (np. jak sie czulem, kolano OK, sen, warunki).
+
+Args:
+  limit: max wpisow (default 10, max 30).
+  status: filter — 'done' (default) | 'skipped' | 'all'. Zwykle chcesz tylko done.
+  since_days: cofnij o N dni (default 30, max 365).
+  only_with_notes: bool (default True) — pomin plany bez actual_notes (jesli chcesz tylko te co user skomentowal).
+
+Returns: {count, workouts: [{id, date, type, title, target_distance_km, actual_notes, actual_run_id, actual_session_id, status, updated_at}]} sorted newest-first.
+
+Perfect for mobile: "jak mi szly ostatnie treningi" / "co zapisalem po biegach" / "komentarze do treningow"."""
+    )
+    def db_get_workout_notes(
+        limit: int = 10,
+        status: str = "done",
+        since_days: int = 30,
+        only_with_notes: bool = True,
+    ) -> str:
+        limit = max(1, min(int(limit), 30))
+        since_days = max(1, min(int(since_days), 365))
+        since = f"-{since_days} days"
+        if status not in ("done", "skipped", "all"):
+            return _dumps({"status": "error", "message": f"invalid status {status!r} — use done/skipped/all"})
+        sql = (
+            "SELECT pw.id, pw.date, wt.key AS type, pw.title, pw.target_distance_km, "
+            "pw.actual_notes, pw.actual_run_id, pw.actual_session_id, "
+            "ws.key AS status, pw.updated_at "
+            "FROM planned_workouts pw "
+            "JOIN workout_types wt ON pw.type_id = wt.id "
+            "JOIN workout_statuses ws ON pw.status_id = ws.id "
+            "WHERE pw.user_id = ? AND pw.date >= date('now', ?)"
+        )
+        params: list = [USER_ID, since]
+        if status != "all":
+            sql += " AND ws.key = ?"
+            params.append(status)
+        if only_with_notes:
+            sql += " AND pw.actual_notes IS NOT NULL AND TRIM(pw.actual_notes) != ''"
+        sql += " ORDER BY pw.date DESC, pw.id DESC LIMIT ?"
+        params.append(limit)
+        rows = _tq(sql, tuple(params))
+        return _dumps({"count": len(rows), "workouts": rows, "user_id": USER_ID})
