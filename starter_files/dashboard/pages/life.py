@@ -18,6 +18,7 @@ from dashboard.callbacks import (
     _invalidate_life_cache, _push_life_to_turso,
     _cb_goal_upsert, _cb_goal_toggle,
     _cb_task_toggle, _cb_task_delete, _cb_note_delete,
+    enc,
 )
 from dashboard.helpers import monday_iso
 from dashboard.utils import get_user_id
@@ -198,8 +199,8 @@ def page_life():
                                     conn,
                                     parent_id=parent_id if parent_id else None,
                                     category=cat,
-                                    title=title.strip(),
-                                    description=(desc.strip() or None),
+                                    title=enc(title.strip(), user_id),
+                                    description=enc(desc.strip() or None, user_id),
                                     success_criteria=(crit.strip() or None),
                                     due_date=(due.isoformat() if due else None),
                                     priority=(prio or None),
@@ -264,7 +265,7 @@ def page_life():
                             conn,
                             date=datetime.now().date().isoformat(),
                             category=cat,
-                            content=content.strip(),
+                            content=enc(content.strip(), user_id),
                             related_task_id=None, related_run_id=None,
                             related_session_id=None,
                             source="manual",

@@ -13,6 +13,12 @@ from db_common import (
     _ALLOWED_EXERCISE_CATEGORIES,
 )
 
+try:
+    from crypto import maybe_encrypt as _enc
+except ImportError:
+    def _enc(v, _uid):
+        return v
+
 
 def register_db_write_tools(mcp) -> None:
     """Register all DB write tools on the given FastMCP instance."""
@@ -152,6 +158,7 @@ Perfect for mobile: "boli mnie kolano prawe 4/10 po biegu" → db-log-body-state
         loc = (location or "").strip()
         if not loc:
             return _dumps({"status": "error", "message": "location is required (e.g. 'kolano_prawe')"})
+        _enc_notes = _enc(notes, USER_ID)
         _tx("""
             INSERT INTO body_state (user_id, date, location, pain_0_10, doms, notes)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -159,7 +166,7 @@ Perfect for mobile: "boli mnie kolano prawe 4/10 po biegu" → db-log-body-state
                 pain_0_10 = excluded.pain_0_10,
                 doms = excluded.doms,
                 notes = excluded.notes
-        """, (USER_ID, d, loc, int(pain_0_10), 1 if doms else 0, notes))
+        """, (USER_ID, d, loc, int(pain_0_10), 1 if doms else 0, _enc_notes))
         return _dumps({
             "ok": True, "date": d, "location": loc, "pain_0_10": int(pain_0_10),
             "doms": bool(doms), "note": notes, "user_id": USER_ID,
@@ -199,7 +206,7 @@ Perfect for mobile: "zapisz insight: po rolowaniu stopy klekanie znika" → db-a
             INSERT INTO notes (user_id, date, category, content, related_task_id,
                                related_run_id, related_session_id, source)
             VALUES (?, ?, ?, ?, ?, ?, NULL, 'mcp_mobile')
-        """, (USER_ID, d, cat, txt, related_task_id, related_run_id))
+        """, (USER_ID, d, cat, _enc(txt, USER_ID), related_task_id, related_run_id))
         return _dumps({
             "ok": True, "id": result["lastrowid"], "date": d, "category": cat,
             "content_preview": txt[:80] + ("…" if len(txt) > 80 else ""),
@@ -241,7 +248,7 @@ Perfect for mobile: "dodaj task: umow fizjo pilnie" → db-add-task(category="zd
         result = _tx("""
             INSERT INTO tasks (user_id, category, title, description, due_date, status, priority, created_at)
             VALUES (?, ?, ?, ?, ?, 'todo', ?, datetime('now'))
-        """, (USER_ID, cat, ttl, description, due_date, prio))
+        """, (USER_ID, cat, _enc(ttl, USER_ID), _enc(description, USER_ID), due_date, prio))
         return _dumps({
             "ok": True, "id": result["lastrowid"], "category": cat, "title": ttl,
             "priority": prio, "due_date": due_date, "user_id": USER_ID,

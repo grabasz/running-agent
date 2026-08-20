@@ -15,6 +15,21 @@ import streamlit as st
 
 import api  # type: ignore
 
+try:
+    from crypto import maybe_decrypt as _maybe_decrypt
+except ImportError:  # crypto module opcjonalny — fallback zwraca plaintext bez zmian
+    def _maybe_decrypt(v, _user_id):
+        return v
+
+
+def _decrypt_fields(rows, user_id, fields):
+    """Deszyfruj wskazane pola in-place na liscie dictow. Zwraca ta sama liste."""
+    for r in rows:
+        for f in fields:
+            if f in r:
+                r[f] = _maybe_decrypt(r[f], user_id)
+    return rows
+
 
 # ============================================
 # Plan (planned_workouts + components)
@@ -63,6 +78,8 @@ def q_current_week_with_components(user_id: int):
         for p in week:
             comps = [dict(c) for c in api.planned.components_for(conn, planned_workout_id=p["id"])]
             by_planned[p["id"]] = comps
+    # 3) Decrypt user-private text field
+    _decrypt_fields(week, user_id, ["actual_notes"])
     return week, by_planned
 
 
@@ -140,13 +157,15 @@ def q_vdot_history(user_id: int, limit=10):
 @st.cache_data(ttl=30)
 def q_body_state(user_id: int, since="-14 days"):
     with api.connect() as conn:
-        return [dict(r) for r in api.body.state_recent(conn, user_id=user_id, since=since)]
+        rows = [dict(r) for r in api.body.state_recent(conn, user_id=user_id, since=since)]
+    return _decrypt_fields(rows, user_id, ["notes"])
 
 
 @st.cache_data(ttl=30)
 def q_tasks_all(user_id: int):
     with api.connect() as conn:
-        return [dict(r) for r in api.tasks.list_all(conn, user_id=user_id)]
+        rows = [dict(r) for r in api.tasks.list_all(conn, user_id=user_id)]
+    return _decrypt_fields(rows, user_id, ["title", "description"])
 
 
 @st.cache_data(ttl=30)
@@ -158,7 +177,8 @@ def q_goals_week(user_id: int, week_start):
 @st.cache_data(ttl=30)
 def q_notes_recent(user_id: int, limit=30):
     with api.connect() as conn:
-        return [dict(r) for r in api.notes.recent(conn, user_id=user_id, limit=limit)]
+        rows = [dict(r) for r in api.notes.recent(conn, user_id=user_id, limit=limit)]
+    return _decrypt_fields(rows, user_id, ["content"])
 
 
 # ============================================
@@ -237,4 +257,5 @@ def q_artifacts(user_id: int, include_archived: bool = False):
             f"FROM session_artifacts WHERE {where} ORDER BY date DESC, id DESC",
             params
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = [dict(r) for r in rows]
+    return _decrypt_fields(result, user_id, ["title", "summary", "content_md"])
