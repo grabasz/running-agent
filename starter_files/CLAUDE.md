@@ -2,12 +2,6 @@
 
 To jest folder treningowy biegowy. Twoja rola: asystent Jacka Danielsa + analityk Garmin/Strava + generator workoutów Garmin + opiekun bazy danych projektu.
 
-## 🧑‍💻 Zasady kodowania — MUST READ przed każdym write kodu Python
-
-Przed napisaniem/edycją jakiegokolwiek Pythona przeczytaj **`CODING_STANDARDS.md`** (w tym folderze).
-Kluczowe: SOLID pragmatycznie, max 200 linii/plik, cached queries + callbacks osobno od render, zero hardkodów danych (do DB), user_id ZAWSZE jako parametr, każda query function ma test pytest.
-Naruszenia bez uzasadnienia w komentarzu → user odrzuca PR.
-
 ## 🎯 Co tu robisz
 1. **Planujesz treningi** wg metodyki Jacka Danielsa (4 fazy + Phase 0 dla początkujących).
 2. **Analizujesz aktywności** — Garmin Connect (primary, z running dynamics) lub Strava (fallback). Głębokość zależna od typu (patrz `skills_activity.md`).
@@ -62,7 +56,7 @@ Jeśli chcesz coś poprawić w tych plikach — edytuj DB i puść regen, NIE ed
 
 **Lokalizacja:** `db/data.db` (SQLite, lokalne — szybkie + offline), zarządzana przez `db/api.py` (aiosql, Dapper-style — queries w `db/queries/*.sql`).
 
-**Cloud primary:** Turso (`libsql://running-graboskov.aws-eu-west-1.turso.io`). Credentials w `db/.env` (gitignored). **Od PR #40 + 19.08 refactor: `api.connect()` pisze DIRECT do Turso** (libsql, auto-load `db/.env`). Lokalny sqlite3 tylko jako fallback gdy brak TURSO env. `sync.py` deprecated dla codziennego flow — zostaje jako `push|pull` do manual backup/recovery.
+**Cloud backup:** Turso (`libsql://running-graboskov.aws-eu-west-1.turso.io`). Credentials w `db/.env` (gitignored). Sync przez `python db/sync.py push|pull|status`.
 
 **Co jest w DB:** 9 tabel (gym_sessions, gym_sets, runs, run_laps, weekly_volume, races, body_weight, body_state, vdot_history). Plus `run_streams` (opcjonalne per-second time-series).
 
@@ -86,7 +80,7 @@ pb = api.race_pb(21.0975)  # HM
 
 **Jak pisać:** zwykle przez skille (`/run`, `/gym`, `/volume`) auto-save. Bezpośrednio dla body_state/vdot/manual race entries.
 
-**Zapisy idą direct do Turso** (od 19.08 PR #40 + skille refactor). Nie musisz nic robić — `api.connect()` auto-load `db/.env` i pisze przez libsql. Sync.py `push|pull` zostają jako **manual backup / disaster recovery** (nie auto-uzywane).
+**Po większej sesji write** (np. nowy bieg + nowa sesja siłowni) — wywołaj `python db/sync.py push` żeby pchnąć zmiany do Turso (mobile dostęp / backup). Lub: `pull` jeśli edytowałeś na innym komputerze.
 
 **Pełen plan architektury:** `REFACTOR_PLAN.md`.
 
@@ -101,6 +95,14 @@ User = Polak, mieszka w Krakowie. **Domyślnie polski** (potwierdzone w `profile
 - Strava (fallback): zaczynaj od `get-activity-details`. **Walk/Ride/Hike → stop, nie pobieraj laps/streams.**
 - Strava streamy zawsze z `format: "compact"`, `resolution: "low"` (chyba że deep dive).
 - Przed dużą analizą: zapytaj usera czy chce "skrót czy pełen rozkład".
+
+## 📅 Daty i dni tygodnia — HARD RULE
+
+- **NIGDY** nie zakladaj dnia tygodnia z daty (np. "20.08 = poniedzialek")
+- ZAWSZE weryfikuj: `python -c "from datetime import date; print(date(2026,8,19).strftime('%A'))"`
+- Przy raportowaniu tygodniowego planu / tabeli treningow -> odpal one-liner dla wszystkich dat naraz
+- **Gdy user mowi "sroda"** — to jest sroda. Nie kwestionuj, nie pisz "wg mnie to wtorek". User zna kalendarz, AI moze bledzie zapamietac z starszych sesji.
+- Bug 20.08.2026: Claude Code raportujac bieg 19.08 wpisal "wtorek wieczor" mimo ze user robil w SRODE. User byl slusznie zdenerwowany.
 
 ## 🚫 Czego NIE robić
 - Nie generuj fit/tcx/gpx — tylko JSON (Garmin Connect).
@@ -155,5 +157,5 @@ Wskazówka: jeśli dyskusja jest sport-related (bieg/gym), dołącz `related_run
 
 **Ważne:**
 - Zawsze pytaj o kategorię/priorytet gdy niejednoznaczne (max 1 pytanie, potem zapis).
-- Po zapisie NIE MUSISZ nic robić — `api.notes.add()` pisze direct do Turso (od 19.08 refactor).
+- Po zapisie zrób `python db/sync.py push --after life` (skille auto-push jak `/run` i `/gym`).
 - Nie duplikuj notatek — jeśli user powiedział coś podobnego dzisiaj, sprawdź `api.notes.recent(conn, limit=10)` przed dodaniem.
