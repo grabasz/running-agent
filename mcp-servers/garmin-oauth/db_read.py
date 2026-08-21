@@ -9,6 +9,22 @@ from db_common import (
     _ALLOWED_NOTE_CATEGORIES,
 )
 
+try:
+    from crypto import maybe_decrypt as _dec
+except ImportError:
+    def _dec(v, _uid):
+        return v
+
+
+def _decrypt_rows(rows, fields):
+    """Deszyfruj pola in-place na liscie dictow (fallback dla klucz-nie-ustawiony
+    zwraca placeholder, patrz crypto.maybe_decrypt)."""
+    for r in rows:
+        for f in fields:
+            if f in r:
+                r[f] = _dec(r[f], USER_ID)
+    return rows
+
 
 def register_db_read_tools(mcp) -> None:
     """Register all DB read tools on the given FastMCP instance."""
@@ -36,7 +52,7 @@ def register_db_read_tools(mcp) -> None:
              WHERE p.week_start = ? AND p.user_id = ?
              ORDER BY p.date, p.id
         """, (ws, USER_ID))
-        return _dumps({"week_start": ws, "workouts": rows})
+        return _dumps({"week_start": ws, "workouts": _decrypt_rows(rows, ["actual_notes"])})
 
     @mcp.tool(name="db-planned-for-date", description="Planned workouts for a specific date (YYYY-MM-DD). Empty list if nothing scheduled.")
     @_wrap_401
@@ -107,7 +123,7 @@ def register_db_read_tools(mcp) -> None:
              WHERE date >= date('now', '-{int(days)} days') AND user_id = ?
              ORDER BY date DESC, location
         """, (USER_ID,))
-        return _dumps(rows)
+        return _dumps(_decrypt_rows(rows, ["notes"]))
 
     @mcp.tool(name="db-weekly-volume", description="Weekly mileage history. Default last 6 weeks.")
     @_wrap_401
@@ -173,7 +189,7 @@ Perfect for mobile: "co ostatnio zapisalem" / "pokaz ostatnie decyzje" / "insigh
         sql += " ORDER BY date DESC, id DESC LIMIT ?"
         params.append(limit)
         rows = _tq(sql, tuple(params))
-        return _dumps({"count": len(rows), "notes": rows, "user_id": USER_ID})
+        return _dumps({"count": len(rows), "notes": _decrypt_rows(rows, ["content"]), "user_id": USER_ID})
 
     @mcp.tool(
         name="db-get-workout-notes",
@@ -220,4 +236,4 @@ Perfect for mobile: "jak mi szly ostatnie treningi" / "co zapisalem po biegach" 
         sql += " ORDER BY pw.date DESC, pw.id DESC LIMIT ?"
         params.append(limit)
         rows = _tq(sql, tuple(params))
-        return _dumps({"count": len(rows), "workouts": rows, "user_id": USER_ID})
+        return _dumps({"count": len(rows), "workouts": _decrypt_rows(rows, ["actual_notes"]), "user_id": USER_ID})

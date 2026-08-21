@@ -15,27 +15,40 @@ import api  # type: ignore
 
 from dashboard import queries
 
+try:
+    from crypto import maybe_encrypt as _maybe_encrypt
+except ImportError:  # crypto module opcjonalny — fallback zwraca plaintext
+    def _maybe_encrypt(v, _user_id):
+        return v
+
+
+def enc(value, user_id):
+    """Skrocone maybe_encrypt — do uzycia w pages przed api.*.add()."""
+    return _maybe_encrypt(value, user_id)
+
 
 # ============================================
 # planned_workouts + components (Przeglad)
 # ============================================
 
-def _apply_component_status(component_id: int, planned_id: int, status_key: str, notes: str | None) -> None:
+def _apply_component_status(component_id: int, planned_id: int, status_key: str, notes: str | None, user_id: int = 1) -> None:
     """Callback: update komponentu, sync parent, uniewaznij cache."""
     with api.connect() as conn:
         api.planned.mark_component_status(
-            conn, id=component_id, status_key=status_key, actual_notes=notes or None
+            conn, id=component_id, status_key=status_key,
+            actual_notes=_maybe_encrypt(notes or None, user_id)
         )
         api.planned.sync_parent_status_from_components(conn, planned_workout_id=planned_id)
     queries.q_current_week_with_components.clear()
     queries.q_today.clear()
 
 
-def _apply_planned_status(planned_id: int, status_key: str, notes: str | None) -> None:
+def _apply_planned_status(planned_id: int, status_key: str, notes: str | None, user_id: int = 1) -> None:
     """Callback: update parent planned_workout (fallback gdy brak komponentów)."""
     with api.connect() as conn:
         api.planned.mark_status(
-            conn, id=planned_id, status_key=status_key, actual_notes=notes or None
+            conn, id=planned_id, status_key=status_key,
+            actual_notes=_maybe_encrypt(notes or None, user_id)
         )
     queries.q_current_week_with_components.clear()
     queries.q_today.clear()

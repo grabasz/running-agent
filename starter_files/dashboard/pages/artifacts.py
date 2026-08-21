@@ -10,7 +10,7 @@ import api  # type: ignore
 
 from dashboard.constants import ARTIFACT_CATEGORIES
 from dashboard.queries import q_artifacts
-from dashboard.callbacks import _push_artifacts_to_turso
+from dashboard.callbacks import _push_artifacts_to_turso, enc
 from dashboard.utils import get_user_id
 
 
@@ -99,7 +99,9 @@ def page_artifacts():
                             "INSERT INTO session_artifacts (user_id, date, category, title, summary, content_md, source) "
                             "VALUES (?, ?, ?, ?, ?, ?, 'manual')",
                             (user_id, datetime.now().date().isoformat(), cat,
-                             title.strip(), summary.strip() or None, content.strip()),
+                             enc(title.strip(), user_id),
+                             enc(summary.strip() or None, user_id),
+                             enc(content.strip(), user_id)),
                         )
                         conn.commit()
                     st.cache_data.clear()

@@ -5,3 +5,4 @@ truststore>=0.9
 uvicorn>=0.30
 starlette>=0.37
 libsql==0.1.11
+cryptography>=42

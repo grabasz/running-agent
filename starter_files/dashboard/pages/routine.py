@@ -8,6 +8,7 @@ import streamlit as st
 import api  # type: ignore
 
 from dashboard.queries import q_active_routine, q_routine_exercises, q_all_routines, q_body_state
+from dashboard.callbacks import enc
 from dashboard.utils import get_user_id
 
 
@@ -81,7 +82,7 @@ def page_routine():
                     location="kolano_prawe",
                     pain_0_10=int(pain),
                     doms=0,
-                    notes=note.strip() or f"Poranna rutyna '{routine['name']}' zrobiona.",
+                    notes=enc(note.strip() or f"Poranna rutyna '{routine['name']}' zrobiona.", user_id),
                 )
             st.cache_data.clear()
             st.success(f"✅ Zapisane: kolano_prawe = {pain}/10")
