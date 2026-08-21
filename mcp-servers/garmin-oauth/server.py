@@ -44,6 +44,7 @@ DECISION RULES:
 - "co ma zaplanowane / plan tygodnia / na jutro"   → DB: db-planned-for-date, db-week-plan
 - "ostatni bieg / splity / jak poszło"             → GARMIN: get-last-run (server-side filter — DO NOT use list-activities + client filter)
 - "aktualny VDOT / tempa treningowe"               → DB: db-current-vdot
+- "jakie mam tempo E/T/I / tempa Daniels / plan pod VDOT" → DB: db-get-training-paces (VDOT z db-current-vdot + tabela Daniels)
 - "trend formy / ostatnie tygodnie"                → DB: db-recent-runs, db-weekly-volume, db-recent-gym
 - "kolano / body state / DOMS" (READ)              → DB: db-body-state
 - "boli / czuję dyskomfort / lekki ból" (WRITE)    → DB: db-log-body-state (mobile-friendly UPSERT: location + pain_0_10 + notes)

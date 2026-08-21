@@ -237,3 +237,58 @@ Perfect for mobile: "jak mi szly ostatnie treningi" / "co zapisalem po biegach" 
         params.append(limit)
         rows = _tq(sql, tuple(params))
         return _dumps({"count": len(rows), "workouts": _decrypt_rows(rows, ["actual_notes"]), "user_id": USER_ID})
+
+    @mcp.tool(
+        name="db-get-training-paces",
+        description="""Tempa treningowe wg tabeli Jacka Danielsa dla podanego VDOT (interpolowane).
+
+Args:
+  vdot: liczba (30-65). Jesli None -> pobierze z db-current-vdot dla biezacego user_id.
+
+Returns:
+  vdot, paces_sec_per_km {E_min, E_max, M, T, I, R}, paces_formatted (m:ss/km), notes.
+
+Uzycie: AI planujace tydzien wg Danielsa (80% E, 1x T ~20 min, opcjonalnie 1x I 3-5 min repeats)."""
+    )
+    @_wrap_401
+    def db_get_training_paces(vdot: float | None = None) -> str:
+        if vdot is None:
+            rows = _tq("SELECT vdot FROM vdot_history WHERE user_id = ? ORDER BY date DESC LIMIT 1", (USER_ID,))
+            if not rows:
+                return _dumps({"status": "error", "message": "brak VDOT w DB dla tego user_id. Zapisz test 5km + wpisz do vdot_history."})
+            vdot = float(rows[0]["vdot"])
+        paces_table = {
+            30: {"E_min": 480, "E_max": 540, "M": 420, "T": 385, "I": 355, "R": 320},
+            35: {"E_min": 435, "E_max": 495, "M": 385, "T": 355, "I": 325, "R": 290},
+            40: {"E_min": 405, "E_max": 465, "M": 355, "T": 325, "I": 300, "R": 265},
+            45: {"E_min": 380, "E_max": 440, "M": 330, "T": 305, "I": 280, "R": 245},
+            50: {"E_min": 360, "E_max": 420, "M": 315, "T": 285, "I": 260, "R": 230},
+            55: {"E_min": 340, "E_max": 400, "M": 295, "T": 270, "I": 245, "R": 215},
+            60: {"E_min": 325, "E_max": 385, "M": 280, "T": 255, "I": 230, "R": 205},
+            65: {"E_min": 310, "E_max": 370, "M": 265, "T": 240, "I": 220, "R": 195},
+        }
+        v_clamped = max(30.0, min(65.0, float(vdot)))
+        vdot_low = int(v_clamped // 5) * 5
+        vdot_high = min(65, vdot_low + 5)
+        if vdot_low == vdot_high:
+            paces = dict(paces_table[vdot_low])
+        else:
+            alpha = (v_clamped - vdot_low) / (vdot_high - vdot_low)
+            p_lo = paces_table[vdot_low]
+            p_hi = paces_table[vdot_high]
+            paces = {k: round(p_lo[k] + alpha * (p_hi[k] - p_lo[k])) for k in p_lo}
+        def _fmt(sec: int) -> str:
+            return f"{sec // 60}:{sec % 60:02d}/km"
+        return _dumps({
+            "vdot": vdot,
+            "paces_sec_per_km": paces,
+            "paces_formatted": {
+                "E_easy": f"{_fmt(paces['E_min'])} - {_fmt(paces['E_max'])}",
+                "M_marathon": _fmt(paces["M"]),
+                "T_threshold": _fmt(paces["T"]),
+                "I_interval": _fmt(paces["I"]),
+                "R_repetition": _fmt(paces["R"]),
+            },
+            "notes": "Daniels: 80%+ tygodnia = E. T ~20 min steady. I 3-5 min. R 200-400m sprints. Dla juniorow (<16) omijaj I i R.",
+            "user_id": USER_ID,
+        })
