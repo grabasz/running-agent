@@ -52,16 +52,25 @@ DECISION RULES:
 - "co zapisałem / ostatnie notatki / pokaż insights" → DB: db-get-notes (read stream, filter po category / since_days / limit)
 - "komentarze z treningów / jak mi szło / co zapisałeś po biegach" → DB: db-get-workout-notes (actual_notes z planned_workouts, NIE notes-stream)
 - "dodaj zadanie / TODO / muszę zrobić"            → DB: db-add-task (category: sport/praca/dom/relacje/zdrowie/inne, priority: low/medium/high)
+- "co mam do zrobienia / otwarte taski / zaległe deadliny" → DB: db-tasks-list (default status=open, filter po category/priority/since_days)
 - "dodaj ćwiczenie / nowe ćwiczenie / zapisz ćwiczenie X" → DB: db-add-exercise (category: rolowanie/aktywacja/stretch/wzmocnienie/kardio)
 - "PB w dystansie / historia startów"              → DB: db-race-pbs
+- "dodaj wyścig / zapisz start / plan startów"     → DB: db-race-add (date, name, distance_km, opcjonalnie actual_time_sec / target_time_sec)
+- "aktualizuj VDOT / nowy test 5km / nowy HM"      → DB: db-vdot-update (UPSERT po date, latest wygrywa)
+- "przesuń trening / zmień tempo w planie / edytuj plan" → DB: db-plan-workout-update (edycja pojedynczych pól, odmawia jeśli status='done')
+- "domykam plan / bieg wykonany / dopisz komentarz do treningu" → DB: db-log-run-actual (link garmin_activity_id/strava_id + actual_notes + status)
+- "trend formy / TSS / CTL/ATL/TSB / świeżość na wyścig" → DB: db-form-trend (hrTSS Coggan + EWMA 42/7)
 - "sen / HRV / body battery / training readiness"  → GARMIN: get-sleep, get-hrv, get-body-battery, get-training-readiness
 
 PLANNING NEXT WEEK (workflow):
-1. Assess: db-current-vdot + db-recent-runs(days=14) + db-body-state(days=14) + db-weekly-volume(weeks=4)
+1. Assess: db-current-vdot + db-recent-runs(days=14) + db-body-state(days=14) + db-weekly-volume(weeks=4) + db-form-trend(weeks=8)
 2. Read allowed types: db-workout-types
-3. For each day: db-plan-workout(date, type_key, title, target_distance_km, target_pace_sec_per_km, notes)
-4. To reset a week first: db-clear-week(week_start)  — refuses if any status='done'
-5. DO NOT call create-workout / schedule-workout unless user EXPLICITLY wants the workout on the Garmin device
+3. **Preferuj bulk**: db-plan-week-bulk(week_start, days=[...], replace=True) — 1 call zamiast 7 (mobile ekonomia tokenów).
+   Fallback per-day: db-plan-workout(date, type_key, title, ...) — używaj tylko dla dopięcia pojedynczego dnia.
+4. Do resetu tygodnia zamiast bulk-replace: db-clear-week(week_start) — refuses if any status='done'.
+5. Do edycji pojedynczego zaplanowanego treningu: db-plan-workout-update (nie DELETE+INSERT).
+6. Po wykonaniu treningu: db-log-run-actual (link do runs + actual_notes) domyka pętlę plan → real.
+7. DO NOT call create-workout / schedule-workout unless user EXPLICITLY wants the workout on the Garmin device
    (planning DB entry ≠ pushing workout to watch). Ask before pushing.
 
 CREATING GARMIN WORKOUT FROM PLAN:
