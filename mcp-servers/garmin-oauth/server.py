@@ -64,6 +64,15 @@ PLANNING NEXT WEEK (workflow):
 5. DO NOT call create-workout / schedule-workout unless user EXPLICITLY wants the workout on the Garmin device
    (planning DB entry ≠ pushing workout to watch). Ask before pushing.
 
+PACE RANGE RULE (przy db-plan-workout dla każdego biegu):
+- `target_pace_sec_per_km` = ŚRODEK zakresu (np. dla 5:20-5:40/km → 330; dla 4:55-5:05 → 300)
+- `notes` MUSI zawierać zakres w formacie `Tempo: M:SS-M:SS/km` (np. `Tempo: 5:20-5:40/km`)
+- Rozstęp minimum **20 sekund/km** (max - min ≥ 20) — węższy jest nierealny do trafienia biegowo
+- Wyjątek: treningi tempowe (T) i interwały (I) — dopuszczalny wąski zakres 10s/km, bo intencja precyzyjna
+- Easy / long / marathon pace — szeroki zakres 20-40s/km
+- Jeśli user prosi o pojedyncze tempo (np. "5:30/km") — rozszerz do zakresu (5:20-5:40) i zapisz środek
+- Regeneracja / recovery run bez zakresu → wpisz `Tempo: bardzo easy, bez presji`
+
 CREATING GARMIN WORKOUT FROM PLAN:
 1. db-planned-for-date(date) — read what to build
 2. Construct workout JSON per Garmin schema (running or strength)
