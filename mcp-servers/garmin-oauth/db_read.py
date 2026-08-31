@@ -7,6 +7,7 @@ from __future__ import annotations
 from db_common import (
     _tq, _dumps, _wrap_401, _monday, USER_ID,
     _ALLOWED_NOTE_CATEGORIES,
+    _ALLOWED_TASK_CATEGORIES, _ALLOWED_TASK_PRIORITIES,
 )
 
 try:
@@ -237,6 +238,164 @@ Perfect for mobile: "jak mi szly ostatnie treningi" / "co zapisalem po biegach" 
         params.append(limit)
         rows = _tq(sql, tuple(params))
         return _dumps({"count": len(rows), "workouts": _decrypt_rows(rows, ["actual_notes"]), "user_id": USER_ID})
+
+    @mcp.tool(
+        name="db-tasks-list",
+        description="""Lista zadań z tabeli tasks (Faza 17 Rozkminy).
+
+Args:
+  status: 'open' (default) | 'done' | 'wontdo' | 'all'. Aliasy: 'pending'/'todo' = 'open'.
+  category: opcjonalny filtr — sport|praca|dom|relacje|zdrowie|inne.
+  priority: opcjonalny filtr — low|medium|high.
+  since_days: opcjonalny — created_at >= N dni wstecz (default: brak limitu — wszystkie).
+  limit: max wpisów (default 20, max 100).
+
+Returns: {count, tasks: [{id, parent_id, category, title, description, success_criteria,
+                          due_date, priority, status, created_at, done_at}]}
+sortowane po (due_date NULLS LAST, id).
+
+Perfect for mobile: 'co mam do zrobienia' / 'jakie taski otwarte' / 'zaległe deadlines'."""
+    )
+    def db_tasks_list(
+        status: str = "open",
+        category: str | None = None,
+        priority: str | None = None,
+        since_days: int | None = None,
+        limit: int = 20,
+    ) -> str:
+        limit = max(1, min(int(limit), 100))
+        s = (status or "open").strip().lower()
+        if s in ("pending", "todo"):
+            s = "open"
+        if s not in ("open", "done", "wontdo", "all"):
+            return _dumps({"status": "error",
+                           "message": f"status must be open|done|wontdo|all (aliases pending/todo -> open), got {status!r}"})
+        sql = ("SELECT id, parent_id, category, title, description, success_criteria, "
+               "due_date, priority, status, created_at, done_at "
+               "FROM tasks WHERE user_id = ?")
+        params: list = [USER_ID]
+        if s != "all":
+            sql += " AND status = ?"; params.append(s)
+        if category:
+            cat = category.strip().lower()
+            if cat not in _ALLOWED_TASK_CATEGORIES:
+                return _dumps({"status": "error",
+                               "message": f"category must be one of {list(_ALLOWED_TASK_CATEGORIES)}"})
+            sql += " AND category = ?"; params.append(cat)
+        if priority:
+            prio = priority.strip().lower()
+            if prio not in _ALLOWED_TASK_PRIORITIES:
+                return _dumps({"status": "error",
+                               "message": f"priority must be one of {list(_ALLOWED_TASK_PRIORITIES)}"})
+            sql += " AND priority = ?"; params.append(prio)
+        if since_days is not None:
+            sql += " AND created_at >= datetime('now', ?)"; params.append(f"-{int(since_days)} days")
+        sql += " ORDER BY (due_date IS NULL), due_date, id LIMIT ?"
+        params.append(limit)
+        rows = _tq(sql, tuple(params))
+        return _dumps({"count": len(rows),
+                       "tasks": _decrypt_rows(rows, ["title", "description"]),
+                       "user_id": USER_ID})
+
+    @mcp.tool(
+        name="db-form-trend",
+        description="""Trend formy (hrTSS + CTL/ATL/TSB) — Coggan uproszczony pod HR z bazy runs.
+
+Metodologia:
+- hrTSS per run = duration_min × (avg_hr / hr_max)² × 100 (skala ~40-150 dla typowego biegu)
+- CTL = 42-day EWMA(TSS) — chronic training load (baza wytrzymałości)
+- ATL = 7-day EWMA(TSS) — acute (świeże zmęczenie)
+- TSB = CTL - ATL — form (+5 wypoczęty, -15 zmęczony, -30 = przetrenowanie)
+
+Args:
+  weeks: ile tygodni cofnąć (default 8, max 26). Wewnętrznie liczy +42 dni warmup dla CTL EWMA.
+  hr_max: opcjonalne — HRmax user'a (default 195; TODO: read from users table).
+
+Returns: {weeks: [{week_start, volume_km, num_runs, avg_hr, avg_pace_sec, tss,
+                   ctl_end, atl_end, tsb_end}], hr_max_used, notes}
+najnowszy pierwszy.
+
+Perfect for mobile: 'jaka moja forma', 'trend CTL 8 tygodni', 'czy jestem świeży pod wyścig'."""
+    )
+    @_wrap_401
+    def db_form_trend(weeks: int = 8, hr_max: int | None = None) -> str:
+        weeks = max(1, min(int(weeks), 26))
+        hrmax = int(hr_max) if hr_max else 195  # TODO: read from users profile
+        if not (140 <= hrmax <= 220):
+            return _dumps({"status": "error", "message": f"hr_max must be 140-220, got {hr_max!r}"})
+        lookback_days = weeks * 7 + 42
+        rows = _tq(f"""
+            SELECT date, distance_km, duration_sec, moving_sec, hr_avg, pace_sec_per_km
+              FROM runs
+             WHERE user_id = ?
+               AND date >= date('now', '-{lookback_days} days')
+               AND distance_km IS NOT NULL AND distance_km > 0.5
+             ORDER BY date ASC
+        """, (USER_ID,))
+        if not rows:
+            return _dumps({"weeks": [], "hr_max_used": hrmax,
+                           "message": "no runs in range", "user_id": USER_ID})
+        from datetime import date as _d, timedelta
+        from collections import defaultdict
+        per_day_tss: dict = defaultdict(float)
+        per_week: dict = defaultdict(lambda: {"volume_km": 0.0, "num_runs": 0,
+                                              "hr_sum": 0, "hr_count": 0,
+                                              "pace_sum": 0.0, "pace_count": 0,
+                                              "tss": 0.0})
+        for r in rows:
+            dur_min = (r["moving_sec"] or r["duration_sec"] or 0) / 60.0
+            hr = r["hr_avg"] or 0
+            tss = dur_min * (hr / hrmax) ** 2 * 100.0 if (dur_min > 0 and hr > 0) else 0.0
+            per_day_tss[r["date"]] += tss
+            d = _d.fromisoformat(r["date"])
+            wk = (d - timedelta(days=d.weekday())).isoformat()
+            wd = per_week[wk]
+            wd["volume_km"] += r["distance_km"] or 0
+            wd["num_runs"] += 1
+            wd["tss"] += tss
+            if hr > 0:
+                wd["hr_sum"] += hr; wd["hr_count"] += 1
+            if r["pace_sec_per_km"]:
+                wd["pace_sum"] += r["pace_sec_per_km"]; wd["pace_count"] += 1
+        today = _d.today()
+        start = today - timedelta(days=lookback_days)
+        ctl = 0.0
+        atl = 0.0
+        ctl_alpha = 2.0 / (42 + 1)
+        atl_alpha = 2.0 / (7 + 1)
+        per_day_form: dict = {}
+        day = start
+        while day <= today:
+            tss = per_day_tss.get(day.isoformat(), 0.0)
+            ctl = ctl * (1 - ctl_alpha) + tss * ctl_alpha
+            atl = atl * (1 - atl_alpha) + tss * atl_alpha
+            per_day_form[day.isoformat()] = {"ctl": ctl, "atl": atl, "tsb": ctl - atl}
+            day += timedelta(days=1)
+        output = []
+        for wk in sorted(per_week.keys(), reverse=True):
+            wd = per_week[wk]
+            wsd = _d.fromisoformat(wk)
+            end_day = min(wsd + timedelta(days=6), today).isoformat()
+            f = per_day_form.get(end_day, {"ctl": 0, "atl": 0, "tsb": 0})
+            output.append({
+                "week_start": wk,
+                "volume_km": round(wd["volume_km"], 1),
+                "num_runs": wd["num_runs"],
+                "avg_hr": round(wd["hr_sum"] / wd["hr_count"]) if wd["hr_count"] else None,
+                "avg_pace_sec": round(wd["pace_sum"] / wd["pace_count"]) if wd["pace_count"] else None,
+                "tss": round(wd["tss"], 1),
+                "ctl_end": round(f["ctl"], 1),
+                "atl_end": round(f["atl"], 1),
+                "tsb_end": round(f["tsb"], 1),
+            })
+            if len(output) >= weeks:
+                break
+        return _dumps({
+            "weeks": output,
+            "hr_max_used": hrmax,
+            "notes": "hrTSS Coggan uproszczony (duration_min × (avg_hr/hrmax)² × 100). CTL=EWMA42, ATL=EWMA7. TSB>+5 = wypoczęty, TSB<-15 = zmęczony, TSB<-30 = przetrenowanie.",
+            "user_id": USER_ID,
+        })
 
     @mcp.tool(
         name="db-get-training-paces",

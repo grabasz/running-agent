@@ -254,6 +254,333 @@ Perfect for mobile: "dodaj task: umow fizjo pilnie" → db-add-task(category="zd
             "priority": prio, "due_date": due_date, "user_id": USER_ID,
         })
 
+    # =========================================================================
+    # Plan closing loop + editing (Faza 19 CRUD toolset)
+    # =========================================================================
+
+    @mcp.tool(
+        name="db-log-run-actual",
+        description="""Zamknij pętlę planu — powiąż wykonany trening z planned_workout i dopisz actual_notes.
+
+Args:
+  planned_workout_id: id z db-week-plan / db-planned-for-date. Alt: (date, type_key)
+    zamiast id — jednoznaczne, jeśli tego dnia więcej niż jeden plan tego typu = błąd 'ambiguous'.
+  actual_notes: co user chce zapisać po treningu (jak się czuło, kolano, warunki).
+  garmin_activity_id: opcjonalnie — jeśli chcesz zlinkować do runs.garmin_activity_id.
+  strava_activity_id: opcjonalnie — jeśli chcesz zlinkować do runs.strava_id.
+  status: 'done' (default) | 'modified' | 'skipped'.
+  date + type_key: alternatywa dla planned_workout_id.
+
+Perfect for mobile po biegu: db-log-run-actual(planned_workout_id=112, actual_notes="14km, blok 4km @4:38, HR max 190")."""
+    )
+    @_wrap_401
+    def db_log_run_actual(
+        planned_workout_id: int | None = None,
+        actual_notes: str | None = None,
+        garmin_activity_id: int | None = None,
+        strava_activity_id: int | None = None,
+        status: str = "done",
+        date: str | None = None,
+        type_key: str | None = None,
+    ) -> str:
+        if status not in ("done", "modified", "skipped"):
+            return _dumps({"status": "error", "message": f"status must be done|modified|skipped, got {status!r}"})
+        if planned_workout_id is None:
+            if not (date and type_key):
+                return _dumps({"status": "error", "message": "provide planned_workout_id OR (date + type_key)"})
+            rows = _tq("""
+                SELECT p.id FROM planned_workouts p
+                  JOIN workout_types t ON t.id = p.type_id
+                 WHERE p.date = ? AND t.key = ? AND p.user_id = ?
+            """, (date, type_key, USER_ID))
+            if not rows:
+                return _dumps({"status": "error", "message": f"no plan for date={date} type_key={type_key}"})
+            if len(rows) > 1:
+                return _dumps({"status": "error", "message": f"ambiguous — {len(rows)} plans for date={date} type_key={type_key}, use planned_workout_id"})
+            planned_workout_id = rows[0]["id"]
+        parent = _tq("SELECT id FROM planned_workouts WHERE id = ? AND user_id = ?", (planned_workout_id, USER_ID))
+        if not parent:
+            return _dumps({"status": "error", "message": f"no planned_workout id={planned_workout_id} for user_id={USER_ID}"})
+        actual_run_id = None
+        if garmin_activity_id:
+            r = _tq("SELECT id FROM runs WHERE garmin_activity_id = ? AND user_id = ?", (garmin_activity_id, USER_ID))
+            actual_run_id = r[0]["id"] if r else None
+        elif strava_activity_id:
+            r = _tq("SELECT id FROM runs WHERE strava_id = ? AND user_id = ?", (strava_activity_id, USER_ID))
+            actual_run_id = r[0]["id"] if r else None
+        enc_notes = _enc(actual_notes, USER_ID) if actual_notes else None
+        _tx("""
+            UPDATE planned_workouts
+               SET status_id = (SELECT id FROM workout_statuses WHERE key = ?),
+                   actual_notes = COALESCE(?, actual_notes),
+                   actual_run_id = COALESCE(?, actual_run_id),
+                   updated_at = datetime('now')
+             WHERE id = ? AND user_id = ?
+        """, (status, enc_notes, actual_run_id, planned_workout_id, USER_ID))
+        return _dumps({
+            "ok": True,
+            "planned_workout_id": planned_workout_id,
+            "status": status,
+            "actual_run_id": actual_run_id,
+            "actual_notes_saved": bool(actual_notes),
+            "linked_from": ("garmin" if garmin_activity_id else "strava" if strava_activity_id else None),
+            "user_id": USER_ID,
+        })
+
+    @mcp.tool(
+        name="db-plan-week-bulk",
+        description="""Zaplanuj cały tydzień jednym wywołaniem (do 7 dni w 1 callu — dla mobile ekonomii tokenów).
+
+Args:
+  week_start: YYYY-MM-DD (musi być poniedziałek).
+  days: lista dictów. Każdy dict: {date, type_key, title,
+        target_distance_km?, target_pace_sec_per_km?, target_hr_max?, target_duration_min?, notes?}
+  replace: bool (default False). Jeśli True — najpierw db-clear-week (odmawia jeśli którykolwiek status='done').
+
+Zwraca: {inserted, ids, week_start}.
+Przy błędzie w środku pętli zwraca {status: partial_error, inserted_so_far: [...ids...]}.
+
+PACE RANGE RULE: notes powinny zawierać "Tempo: M:SS-M:SS/km" z rozstępem min 20s/km (patrz server instructions).
+
+Perfect for planning: user mówi 'zaplanuj mi tydzień 07-13.09' → 1 call zamiast 7."""
+    )
+    @_wrap_401
+    def db_plan_week_bulk(
+        week_start: str,
+        days: list,
+        replace: bool = False,
+    ) -> str:
+        if not isinstance(days, list) or not days:
+            return _dumps({"status": "error", "message": "days must be a non-empty list of dicts"})
+        from datetime import date as _d
+        try:
+            wsd = _d.fromisoformat(week_start)
+            if wsd.weekday() != 0:
+                return _dumps({"status": "error", "message": f"week_start must be Monday, got {wsd.strftime('%A')}"})
+        except ValueError:
+            return _dumps({"status": "error", "message": f"invalid week_start date: {week_start!r}"})
+        type_cache: dict = {}
+        prepared = []
+        for i, d in enumerate(days):
+            if not isinstance(d, dict):
+                return _dumps({"status": "error", "message": f"days[{i}] must be dict, got {type(d).__name__}"})
+            for key in ("date", "type_key", "title"):
+                if not d.get(key):
+                    return _dumps({"status": "error", "message": f"days[{i}]: missing required field {key!r}"})
+            tk = d["type_key"]
+            if tk not in type_cache:
+                tt = _tq("SELECT id FROM workout_types WHERE key = ?", (tk,))
+                if not tt:
+                    return _dumps({"status": "error", "message": f"days[{i}]: unknown type_key {tk!r}"})
+                type_cache[tk] = tt[0]["id"]
+            prepared.append({
+                "date": d["date"],
+                "week_start": _monday(d["date"]),
+                "type_id": type_cache[tk],
+                "title": d["title"],
+                "target_distance_km": d.get("target_distance_km"),
+                "target_duration_min": d.get("target_duration_min"),
+                "target_pace_sec_per_km": d.get("target_pace_sec_per_km"),
+                "target_hr_max": d.get("target_hr_max"),
+                "notes": d.get("notes"),
+            })
+        if replace:
+            done = _tq("""
+                SELECT COUNT(*) AS n FROM planned_workouts p
+                  JOIN workout_statuses s ON s.id = p.status_id
+                 WHERE p.week_start = ? AND p.user_id = ? AND s.key = 'done'
+            """, (week_start, USER_ID))
+            if done and done[0]["n"] > 0:
+                return _dumps({"status": "error", "message": f"replace refused — {done[0]['n']} workouts in week {week_start} are 'done'"})
+            _tx("""DELETE FROM planned_workout_components WHERE planned_workout_id IN
+                   (SELECT id FROM planned_workouts WHERE week_start = ? AND user_id = ?)""", (week_start, USER_ID))
+            _tx("DELETE FROM planned_workouts WHERE week_start = ? AND user_id = ?", (week_start, USER_ID))
+        ids = []
+        for p in prepared:
+            try:
+                result = _tx("""
+                    INSERT INTO planned_workouts
+                        (date, week_start, type_id, status_id, title, target_distance_km,
+                         target_duration_min, target_pace_sec_per_km, target_hr_max, notes, user_id)
+                    VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+                """, (p["date"], p["week_start"], p["type_id"], p["title"],
+                      p["target_distance_km"], p["target_duration_min"],
+                      p["target_pace_sec_per_km"], p["target_hr_max"],
+                      p["notes"], USER_ID))
+                ids.append(result["lastrowid"])
+            except Exception as e:
+                return _dumps({
+                    "status": "partial_error",
+                    "message": f"insert failed at days[{len(ids)}] ({p['date']} {p['title'][:40]}): {type(e).__name__}: {e}",
+                    "inserted_so_far": ids,
+                })
+        return _dumps({"ok": True, "inserted": len(ids), "ids": ids, "week_start": week_start, "user_id": USER_ID})
+
+    @mcp.tool(
+        name="db-plan-workout-update",
+        description="""Edytuj pojedyncze pola planned_workout (bez DELETE+INSERT).
+
+Args (wszystkie opcjonalne poza id):
+  id: id planned_workout.
+  title, target_distance_km, target_pace_sec_per_km, target_hr_max,
+  target_duration_min, notes, date, type_key.
+
+Rules:
+- Odmawia edycji title/type_key/date/target_* jeśli status='done' (chroni logged workout).
+  Notes można edytować zawsze (nawet w done — to komentarz użytkownika).
+- Zmiana date przelicza week_start automatycznie.
+- Jeśli chcesz przenieść w czasie: db-plan-workout-update(id=112, date='2026-09-06')."""
+    )
+    @_wrap_401
+    def db_plan_workout_update(
+        id: int,
+        title: str | None = None,
+        target_distance_km: float | None = None,
+        target_pace_sec_per_km: int | None = None,
+        target_hr_max: int | None = None,
+        target_duration_min: int | None = None,
+        notes: str | None = None,
+        date: str | None = None,
+        type_key: str | None = None,
+    ) -> str:
+        row = _tq("""
+            SELECT p.id, s.key AS status_key
+              FROM planned_workouts p JOIN workout_statuses s ON s.id = p.status_id
+             WHERE p.id = ? AND p.user_id = ?
+        """, (id, USER_ID))
+        if not row:
+            return _dumps({"status": "error", "message": f"no planned_workout id={id} for user_id={USER_ID}"})
+        is_done = row[0]["status_key"] == "done"
+        given_core = {k for k, v in {
+            "title": title, "date": date, "type_key": type_key,
+            "target_distance_km": target_distance_km,
+            "target_pace_sec_per_km": target_pace_sec_per_km,
+            "target_hr_max": target_hr_max, "target_duration_min": target_duration_min,
+        }.items() if v is not None}
+        if is_done and given_core:
+            return _dumps({"status": "error",
+                           "message": f"workout id={id} is 'done' — only 'notes' can be edited (attempted core fields: {sorted(given_core)})"})
+        updates: list[str] = []
+        params: list = []
+        if title is not None:
+            updates.append("title = ?"); params.append(title)
+        if target_distance_km is not None:
+            updates.append("target_distance_km = ?"); params.append(target_distance_km)
+        if target_pace_sec_per_km is not None:
+            updates.append("target_pace_sec_per_km = ?"); params.append(target_pace_sec_per_km)
+        if target_hr_max is not None:
+            updates.append("target_hr_max = ?"); params.append(target_hr_max)
+        if target_duration_min is not None:
+            updates.append("target_duration_min = ?"); params.append(target_duration_min)
+        if notes is not None:
+            updates.append("notes = ?"); params.append(notes)
+        if type_key is not None:
+            tt = _tq("SELECT id FROM workout_types WHERE key = ?", (type_key,))
+            if not tt:
+                return _dumps({"status": "error", "message": f"unknown type_key {type_key!r}"})
+            updates.append("type_id = ?"); params.append(tt[0]["id"])
+        if date is not None:
+            updates.append("date = ?"); params.append(date)
+            updates.append("week_start = ?"); params.append(_monday(date))
+        if not updates:
+            return _dumps({"status": "error", "message": "no fields to update"})
+        updates.append("updated_at = datetime('now')")
+        params.extend([id, USER_ID])
+        _tx(f"UPDATE planned_workouts SET {', '.join(updates)} WHERE id = ? AND user_id = ?", tuple(params))
+        return _dumps({"ok": True, "id": id, "updated_fields": len(updates) - 1, "user_id": USER_ID})
+
+    # =========================================================================
+    # Races + VDOT
+    # =========================================================================
+
+    @mcp.tool(
+        name="db-race-add",
+        description="""Dodaj wyścig (planowany albo wykonany) do races.
+
+Args:
+  date: YYYY-MM-DD. Wymagany.
+  name: nazwa (np. 'HM Gniezno'). Wymagany.
+  distance_km: float (np. 21.0975 dla HM). Wymagany.
+  actual_time_sec: opcjonalnie — sekundy netto, jeśli wyścig już był.
+  target_time_sec: opcjonalnie — planowany czas.
+  place_overall: opcjonalnie — miejsce open.
+  strategy: opcjonalnie — opis strategii startowej.
+  notes: opcjonalnie.
+  is_pb: 0/1 (default 0). Do pełnej rekalkulacji użyj api.recompute_pbs() offline.
+
+Dedup: UNIQUE(date, name)."""
+    )
+    @_wrap_401
+    def db_race_add(
+        date: str,
+        name: str,
+        distance_km: float,
+        actual_time_sec: int | None = None,
+        target_time_sec: int | None = None,
+        place_overall: int | None = None,
+        strategy: str | None = None,
+        notes: str | None = None,
+        is_pb: int = 0,
+    ) -> str:
+        n = (name or "").strip()
+        if not n:
+            return _dumps({"status": "error", "message": "name is required"})
+        if not date or not distance_km:
+            return _dumps({"status": "error", "message": "date and distance_km are required"})
+        try:
+            result = _tx("""
+                INSERT INTO races (user_id, date, name, distance_km, target_time_sec,
+                                   actual_time_sec, is_pb, place_overall, strategy, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (USER_ID, date, n, float(distance_km), target_time_sec,
+                  actual_time_sec, int(is_pb), place_overall, strategy, notes))
+            return _dumps({"ok": True, "id": result["lastrowid"], "date": date, "name": n,
+                           "distance_km": distance_km, "user_id": USER_ID})
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                return _dumps({"status": "error", "message": f"race ({date}, {n}) already exists"})
+            return _dumps({"status": "error", "message": f"{type(e).__name__}: {e}"})
+
+    @mcp.tool(
+        name="db-vdot-update",
+        description="""Dodaj/aktualizuj wpis VDOT (progresja formy). UPSERT po (user_id, date).
+
+Args:
+  vdot: int (30-70). Wymagany.
+  source: opis testu (np. 'HM Gniezno 1:35:12', 'test 5km 22:30'). Wymagany.
+  date: YYYY-MM-DD, default today.
+  threshold_pace_sec: opcjonalnie — sekundy/km (np. 264 = 4:24/km dla VDOT 55).
+  notes: opcjonalnie.
+
+Latest entry (per user_id) wygrywa w db-current-vdot."""
+    )
+    @_wrap_401
+    def db_vdot_update(
+        vdot: int,
+        source: str,
+        date: str | None = None,
+        threshold_pace_sec: int | None = None,
+        notes: str | None = None,
+    ) -> str:
+        from datetime import date as _d
+        d = date or _d.today().isoformat()
+        if not isinstance(vdot, int) or not (30 <= vdot <= 70):
+            return _dumps({"status": "error", "message": f"vdot must be int 30-70, got {vdot!r}"})
+        src = (source or "").strip()
+        if not src:
+            return _dumps({"status": "error", "message": "source is required"})
+        _tx("""
+            INSERT INTO vdot_history (user_id, date, vdot, t_pace_sec, source, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, date) DO UPDATE SET
+                vdot = excluded.vdot,
+                t_pace_sec = excluded.t_pace_sec,
+                source = excluded.source,
+                notes = excluded.notes
+        """, (USER_ID, d, int(vdot), threshold_pace_sec, src, notes))
+        return _dumps({"ok": True, "date": d, "vdot": int(vdot), "source": src,
+                       "threshold_pace_sec": threshold_pace_sec, "user_id": USER_ID})
+
     @mcp.tool(
         name="db-add-exercise",
         description="""Add a new exercise to the exercises catalog (used by routines).
