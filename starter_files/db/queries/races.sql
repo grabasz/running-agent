@@ -4,19 +4,21 @@
 
 -- name: add<!
 INSERT INTO races
-    (date, name, distance_km, target_time_sec, actual_time_sec,
+    (user_id, date, name, distance_km, target_time_sec, actual_time_sec,
      is_pb, place_overall, place_category, conditions_temp_c, strategy, notes)
 VALUES
-    (:date, :name, :distance_km, :target_time_sec, :actual_time_sec,
+    (:user_id, :date, :name, :distance_km, :target_time_sec, :actual_time_sec,
      :is_pb, :place_overall, :place_category, :conditions_temp_c, :strategy, :notes);
 
 
 -- name: update_result!
--- Fill in actual time and refresh is_pb
+-- Fill in actual time and refresh is_pb (per user).
 UPDATE races
    SET actual_time_sec = :actual_time_sec,
        notes = COALESCE(:notes, notes)
- WHERE date = :date;
+ WHERE user_id = :user_id
+   AND date = :date
+   AND name = :name;
 
 
 -- name: recompute_pbs!

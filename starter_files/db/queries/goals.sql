@@ -3,10 +3,10 @@
 -- ============================================
 
 -- name: upsert!
--- Jeden goal per (week_start, category). Ponowny insert dla tej pary nadpisuje.
-INSERT INTO weekly_goals (week_start, category, goal, status)
-VALUES (:week_start, :category, :goal, COALESCE(:status, 'open'))
-ON CONFLICT(week_start, category) DO UPDATE SET
+-- Jeden goal per (user_id, week_start, category). Ponowny insert dla tej trójki nadpisuje.
+INSERT INTO weekly_goals (user_id, week_start, category, goal, status)
+VALUES (:user_id, :week_start, :category, :goal, COALESCE(:status, 'open'))
+ON CONFLICT(user_id, week_start, category) DO UPDATE SET
     goal = excluded.goal,
     status = excluded.status,
     updated_at = datetime('now');
