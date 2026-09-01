@@ -9,16 +9,25 @@ PRAGMA foreign_keys = ON;
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS users (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    name              TEXT    NOT NULL UNIQUE,
-    display_name      TEXT,
-    garmin_token_dir  TEXT,
-    created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                TEXT    NOT NULL UNIQUE,
+    display_name        TEXT,
+    garmin_token_dir    TEXT,
+    -- Profile extension (migration 009): needed by auto-planner + form-trend.
+    max_hr              INTEGER,   -- observed HR max (Bartek 195, Mati age-based 205)
+    resting_hr          INTEGER,   -- resting HR for HRR calc
+    birth_year          INTEGER,   -- age-based decisions (Mati 14yo safety cap)
+    safety_max_km_week  INTEGER,   -- absolute weekly km ceiling (Mati=30, Bartek NULL)
+    preferences         TEXT,      -- JSON: group_days, rest_days, notes
+    created_at          TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-INSERT OR IGNORE INTO users (id, name, display_name, garmin_token_dir) VALUES
-    (1, 'bartek', 'Bartek',   'bartek'),
-    (2, 'mati',   'Mateusz',  'mati');
+INSERT OR IGNORE INTO users (id, name, display_name, garmin_token_dir,
+                              max_hr, resting_hr, birth_year, safety_max_km_week, preferences) VALUES
+    (1, 'bartek', 'Bartek',   'bartek', 195, 48, 1985, NULL,
+        '{"group_days":[["Mon","easy"],["Wed","easy"]]}'),
+    (2, 'mati',   'Mateusz',  'mati',   205, 55, 2012, 30,
+        '{"safety_notes":"14yo — no I/R, easy 80%+"}');
 
 -- ============================================
 -- GYM
@@ -195,22 +204,27 @@ CREATE TABLE IF NOT EXISTS races (
     strategy            TEXT,
     notes               TEXT,
     run_id              INTEGER REFERENCES runs(id),  -- link to Strava activity
-    -- Dedup: one race per (date, name) — can't add Białystok 10.05 twice
-    UNIQUE(date, name)
+    -- Dedup: one race per user per (date, name) — Mati and Bartek can attend same event.
+    UNIQUE(user_id, date, name)
 );
 
 CREATE INDEX IF NOT EXISTS idx_races_date ON races(date);
+CREATE INDEX IF NOT EXISTS idx_races_user_date ON races(user_id, date);
 
 -- ============================================
 -- BODY
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS body_weight (
-    id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    date    TEXT UNIQUE NOT NULL,
-    kg      REAL NOT NULL,
-    notes   TEXT
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id  INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),
+    date     TEXT NOT NULL,
+    kg       REAL NOT NULL,
+    notes    TEXT,
+    UNIQUE(user_id, date)
 );
+
+CREATE INDEX IF NOT EXISTS idx_body_weight_user_date ON body_weight(user_id, date);
 
 CREATE TABLE IF NOT EXISTS body_state (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -282,9 +296,9 @@ CREATE TABLE IF NOT EXISTS planned_workouts (
     created_at              TEXT DEFAULT (datetime('now')),
     updated_at              TEXT,
 
-    -- Dedup: one workout per (date, type) combination (allows double-day with different types,
-    -- e.g. Easy run + Strength on the same day, but not two Easy runs)
-    UNIQUE(date, type_id)
+    -- Dedup: one workout per user per (date, type) — Mati and Bartek can have same
+    -- type on same date. Allows double-day with different types (Easy + Strength).
+    UNIQUE(user_id, date, type_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_planned_date ON planned_workouts(date);

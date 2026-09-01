@@ -127,8 +127,8 @@ def page_life():
                         st.error("Wpisz treść celu.")
                     else:
                         with api.connect() as conn:
-                            api.goals.upsert(conn, week_start=week_start, category=add_cat,
-                                             goal=add_text.strip(), status=None)
+                            api.goals.upsert(conn, user_id=user_id, week_start=week_start,
+                                             category=add_cat, goal=add_text.strip(), status=None)
                         _invalidate_life_cache()
                         _push_life_to_turso()
                         st.rerun()

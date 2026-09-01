@@ -10,6 +10,7 @@ Auth: shared with strava-mcp via `~/.config/strava-mcp/config.json`
 """
 
 import json
+import os
 import sys
 import time
 from collections import defaultdict
@@ -176,7 +177,11 @@ def main():
                     trend = "peak"
                 else:
                     trend = None
+                # user_id from RUNNING_USER_ID env (default 1 = Bartek — this
+                # CLI script is Bartek-only; Mati uses dashboard for volume).
+                user_id = int(os.environ.get("RUNNING_USER_ID", "1"))
                 api.weekly_volume.upsert(conn,
+                    user_id=user_id,
                     week_start=w,
                     distance_km=round(km, 2),
                     elevation_gain_m=int(d["elev"]),

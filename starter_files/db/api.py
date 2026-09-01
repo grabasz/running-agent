@@ -85,6 +85,7 @@ planned         = _load("planned.sql")
 tasks           = _load("tasks.sql")
 goals           = _load("goals.sql")
 notes           = _load("notes.sql")
+users           = _load("users.sql")
 _stats          = _load("stats.sql")
 
 
