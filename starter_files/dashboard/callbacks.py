@@ -14,6 +14,7 @@ import streamlit as st
 import api  # type: ignore
 
 from dashboard import queries
+from dashboard.utils import get_user_id
 
 try:
     from crypto import maybe_encrypt as _maybe_encrypt
@@ -70,8 +71,8 @@ def _cb_goal_upsert(week_start: str, category: str, key: str):
     if not val:
         return
     with api.connect() as conn:
-        api.goals.upsert(conn, week_start=week_start, category=category,
-                         goal=val, status=None)
+        api.goals.upsert(conn, user_id=get_user_id(), week_start=week_start,
+                         category=category, goal=val, status=None)
     _invalidate_life_cache()
 
 
