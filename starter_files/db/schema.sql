@@ -350,6 +350,9 @@ INSERT OR IGNORE INTO workout_types (id, key, display_pl, display_en, category, 
 -- VDOT / FITNESS PROGRESSION
 -- ============================================
 
+-- Faza 20 auto-planner: cele + referencyjny makroplan → db/migrations/011_training_goals_macro.sql
+-- (tabele training_goals, macro_plan_weeks; tworzone przez migrację, żeby nie dublować DDL)
+
 CREATE TABLE IF NOT EXISTS vdot_history (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL DEFAULT 1 REFERENCES users(id),

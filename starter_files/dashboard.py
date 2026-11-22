@@ -83,6 +83,7 @@ from dashboard.pages.artifacts import page_artifacts
 from dashboard.pages.running import page_running
 from dashboard.pages.strength import page_strength
 from dashboard.pages.races import page_races
+from dashboard.pages.macro import page_macro
 from dashboard.pages.life import page_life
 from dashboard.pages.learning import page_learning
 
@@ -99,6 +100,7 @@ PAGES = {
     "🏃 Bieganie":             page_running,
     "💪 Siłownia":             page_strength,
     "🏆 Wyścigi":              page_races,
+    "🧭 Makroplan":            page_macro,
     "🧠 Rozkminy":             page_life,
     "🎓 Nauka":                page_learning,
 }
