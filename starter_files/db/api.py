@@ -86,6 +86,7 @@ tasks           = _load("tasks.sql")
 goals           = _load("goals.sql")
 notes           = _load("notes.sql")
 users           = _load("users.sql")
+macro           = _load("macro.sql")
 _stats          = _load("stats.sql")
 
 
