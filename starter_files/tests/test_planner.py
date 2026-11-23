@@ -1,7 +1,7 @@
 """Testy deterministycznego planera (planner/*) — czysta logika, zero DB."""
 from __future__ import annotations
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -149,3 +149,79 @@ def test_adherence_and_advice():
     assert adh["overall_ratio"] == round(58 / 120, 2)
     assert any("baseline" in t for t in replan_advice(adh, 0))
     assert baseline_from_actual([30, 28, 0, 40]) == 24.5
+
+
+# ---------- events: starty pośrednie, reguły, progresja weekly ----------
+
+from planner.events import TuneUp  # noqa: E402
+
+MAR = 42.195
+
+
+def _m_input(**kw) -> MacroInput:
+    base = dict(start=MON, baseline_km=40.0, vdot=52, race_date=date(2027, 4, 18),
+                distance_km=MAR, peak_km=70, progression="weekly")
+    base.update(kw)
+    return MacroInput(**base)
+
+
+def test_weekly_progression_caps_step_and_reaches_peak():
+    ws = build_macrocycle(_m_input())
+    build = [w for w in ws if w.phase not in (M.PHASE_TAPER,) and not w.is_deload]
+    for a, b in zip(build, build[1:]):
+        assert b.target_km <= a.target_km * 1.07 + 0.2 or b.target_km - a.target_km <= 5.1 or a.is_deload
+    assert max(w.target_km for w in ws if not w.is_race_week) == 70
+
+
+def test_b_race_replaces_deload_and_long():
+    hm = TuneUp(date(2027, 3, 7), HM, "B")
+    ws = build_macrocycle(_m_input(tune_ups=(hm,)))
+    i = next(k for k, w in enumerate(ws) if w.tune_up == "B")
+    assert ws[i].long_km == 0 and ws[i].quality[0]["kind"] == "race"
+    assert not ws[i - 1].is_deload            # start sam odciąża
+    assert ws[i + 1].target_km < 70           # tydzień po HM lżejszy
+
+
+def test_quality_cap_and_kind_ban():
+    ws = build_macrocycle(_m_input(quality_caps=((date(2026, 12, 31), 1),),
+                                   kind_bans=(("R", date(2027, 2, 1), "S"),)))
+    for w in ws:
+        hard = [q for q in w.quality if q["kind"] != "S"]
+        if w.week_start <= date(2026, 12, 31):
+            assert len(hard) <= 1
+        if w.week_start < date(2027, 2, 1):
+            assert all(q["kind"] != "R" for q in w.quality)
+
+
+def test_long_smoothing_and_cap():
+    ws = build_macrocycle(_m_input(long_start_km=18.5, long_step_km=3, long_cap_km=32))
+    best = 18.5
+    for w in ws:
+        assert w.long_km <= min(best + 3, 32) + 1e-9
+        if not w.is_deload and not w.is_race_week:
+            best = max(best, w.long_km)
+    assert ws[-1].long_km == 0               # tydzień maratonu: start = long
+
+
+def test_forced_deload_and_pre_hm_dip():
+    xmas = date(2026, 12, 21)
+    hm = TuneUp(date(2027, 3, 7), HM, "B")
+    ws = build_macrocycle(_m_input(forced_deloads=(xmas,), tune_ups=(hm,)))
+    by = {w.week_start: w for w in ws}
+    assert by[xmas].is_deload
+    assert not by[date(2026, 12, 14)].is_deload and not by[date(2026, 12, 28)].is_deload
+    pre = by[date(2027, 2, 22)]
+    assert pre.target_km < by[date(2027, 2, 15)].target_km       # spadek przed HM
+
+
+def test_render_week_with_tune_up_race():
+    ws = build_macrocycle(_m_input(tune_ups=(TuneUp(date(2027, 3, 7), HM, "B"),
+                                             TuneUp(date(2026, 12, 31), 10.0, "B"))))
+    for w in ws:
+        if not w.tune_up:
+            continue
+        days = render_week(w, 52)
+        races = [d for d in days if d["type_key"] == "race"]
+        assert len(races) == 1
+        rd = date.fromisoformat(races[0]["date"])
+        assert all(date.fromisoformat(d["date"]) != rd - timedelta(days=1) for d in days if d is not races[0])

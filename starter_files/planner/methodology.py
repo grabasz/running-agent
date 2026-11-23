@@ -33,6 +33,8 @@ PHASE_LABELS = {
     PHASE_LATE: "III · Późna jakość",
     PHASE_TAPER: "IV · Taper",
     PHASE_MAINTENANCE: "Utrzymanie",
+    # fazy planów z panelu AI / ręcznych (Pfitzinger-style)
+    "build": "Budowa", "specific": "Specyfika", "race": "Start",
 }
 
 # Udział faz w tygodniach budowy (po odjęciu tapera i roztrenowania).
@@ -67,6 +69,18 @@ STEP_MAX_PCT = 0.10              # max +10% na blok
 STEP_KM_PER_RUN = 1.6            # Daniels: +1 mila na sesję biegową w tygodniu, co 3-4 tyg.
 MIN_WEEK_KM = 10.0
 
+# Progresja "weekly" (notatka #42 usera): co tydzień min(+7%, +5 km), deload co 4. ~70%.
+WEEKLY_STEP_PCT = 0.07
+WEEKLY_STEP_KM = 5.0
+WEEKLY_DELOAD_FACTOR = 0.70
+LONG_STEP_MAX_KM = 3.0           # long max +3 km względem dotychczasowego maksimum
+
+# Starty pośrednie (B = mini-taper; C = start zamiast akcentu, bez zmian objętości)
+TUNE_UP_B_WEEK_FACTOR = 0.70     # tydzień startu B: -30% (start wliczony)
+TUNE_UP_B_AFTER_FACTOR = 0.85    # tydzień po starcie B: zredukowany, 1 akcent
+TUNE_UP_B_PRE_FACTOR = 0.85      # tydzień przed startem B ≥ HM: lekki spadek
+TUNE_UP_RECOVERY_MIN_KM = 21.0   # lżejszy tydzień po starcie tylko od HM wzwyż
+
 # Domyślny szczyt objętości per dystans (gdy user nie poda) — km/tydz.
 DEFAULT_PEAK_KM = [(5.5, 50.0), (11.0, 55.0), (22.0, 65.0), (99.0, 80.0)]
 
@@ -83,6 +97,9 @@ LONG_PCT = 0.25                  # long ≤ 25% tygodnia ...
 LONG_PCT_LOW_VOLUME = 0.30       # ... lub 30% gdy tydzień < 64 km
 LOW_VOLUME_KM = 64.0
 LONG_MAX_MIN = 150               # long ≤ 150 min
+# Maraton: long jako główny bodziec (Pfitzinger: 29-35 km przy 55-70 mil/tydz., do ~3 h).
+LONG_PCT_MARATHON = 0.45
+LONG_MAX_MIN_MARATHON = 180
 LONG_MAX_KM = [(5.5, 16.0), (11.0, 18.0), (22.0, 22.0), (99.0, 35.0)]
 WARMUP_COOLDOWN_KM = 4.0         # rozgrzewka + schłodzenie przy sesji Q
 MIN_EASY_RUN_KM = 4.0

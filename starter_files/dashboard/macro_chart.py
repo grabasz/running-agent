@@ -14,7 +14,8 @@ REFERENCE_COLOR = "#8a8984"
 
 
 def render_progress_chart(reference: list[dict], actual_km: dict[str, float],
-                          replan: list[dict], today_iso: str) -> go.Figure:
+                          replan: list[dict], today_iso: str, ref_name: str = "Plan referencyjny",
+                          replan_name: str = "Replan od dziś") -> go.Figure:
     fig = go.Figure()
     ref_x = [w["week_start"] for w in reference]
     act_x = sorted(k for k in actual_km if not ref_x or k >= ref_x[0])
@@ -25,7 +26,7 @@ def render_progress_chart(reference: list[dict], actual_km: dict[str, float],
     )
     if reference:
         fig.add_scatter(
-            x=ref_x, y=[w["target_km"] for w in reference], name="Plan referencyjny",
+            x=ref_x, y=[w["target_km"] for w in reference], name=ref_name,
             mode="lines+markers", line=dict(color=REFERENCE_COLOR, width=2, shape="hv"),
             marker=dict(size=8),
             customdata=[[PHASE_LABELS.get(w["phase"], w["phase"]), "odciążenie" if w["is_deload"] else ""]
@@ -35,9 +36,9 @@ def render_progress_chart(reference: list[dict], actual_km: dict[str, float],
     if replan:
         fig.add_scatter(
             x=[w["week_start"] for w in replan], y=[w["target_km"] for w in replan],
-            name="Replan od dziś", mode="lines", line=dict(color=REPLAN_COLOR, width=2, dash="dash", shape="hv"),
+            name=replan_name, mode="lines", line=dict(color=REPLAN_COLOR, width=2, dash="dash", shape="hv"),
             customdata=[PHASE_LABELS.get(w["phase"], w["phase"]) for w in replan],
-            hovertemplate="%{x}<br>Replan: %{y:.1f} km<br>%{customdata}<extra></extra>",
+            hovertemplate="%{x}<br>" + replan_name + ": %{y:.1f} km<br>%{customdata}<extra></extra>",
         )
     fig.add_vline(x=today_iso, line=dict(color=REFERENCE_COLOR, width=1, dash="dot"))
     fig.update_layout(

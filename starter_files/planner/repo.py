@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 import api  # type: ignore
 
-from planner.macro import WeekTarget, monday
+from planner.macro import monday
 
 DEFAULT_VDOT = 45.0
 HISTORY_WEEKS = 16
@@ -61,16 +61,29 @@ def reference_weeks(conn, user_id: int, goal_id: int) -> list[dict]:
     return out
 
 
-def save_goal(conn, user_id: int, goal: dict, weeks: list[WeekTarget]) -> int:
-    """Archiwizuje poprzedni aktywny cel, zapisuje nowy + snapshot makroplanu."""
-    api.macro.goal_archive_active(conn, user_id=user_id)
-    goal_id = api.macro.goal_add(conn, user_id=user_id, **goal)
+GOAL_DEFAULTS = {"race_id": None, "status": "active", "source": "deterministic",
+                 "methodology": None, "notes": None}
+
+
+def save_goal(conn, user_id: int, goal: dict, weeks: list) -> int:
+    """Archiwizuje poprzedni cel o tym samym statusie, zapisuje nowy + snapshot makroplanu.
+
+    weeks: WeekTarget albo dict (format WeekTarget.to_dict + opcjonalnie
+    long_structure / key_session / notes — plan z panelu AI).
+    """
+    payload = {**GOAL_DEFAULTS, **goal}
+    api.macro.goal_archive_status(conn, user_id=user_id, status=payload["status"])
+    goal_id = api.macro.goal_add(conn, user_id=user_id, **payload)
     for w in weeks:
+        d = w.to_dict() if hasattr(w, "to_dict") else w
         api.macro.week_add(
-            conn, user_id=user_id, goal_id=goal_id, week_start=w.week_start.isoformat(),
-            phase=w.phase, week_in_phase=w.week_in_phase, is_deload=int(w.is_deload),
-            is_race_week=int(w.is_race_week), target_km=w.target_km, long_km=w.long_km,
-            quality_json=json.dumps(w.quality))
+            conn, user_id=user_id, goal_id=goal_id, week_start=str(d["week_start"]),
+            phase=d["phase"], week_in_phase=d.get("week_in_phase", 1),
+            is_deload=int(bool(d.get("is_deload"))), is_race_week=int(bool(d.get("is_race_week"))),
+            target_km=d["target_km"], long_km=d.get("long_km"),
+            quality_json=json.dumps(d.get("quality") or []),
+            long_structure=d.get("long_structure"), key_session=d.get("key_session"),
+            notes=d.get("notes"))
     return goal_id
 
 

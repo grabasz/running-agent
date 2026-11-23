@@ -16,13 +16,14 @@ from planner import repo, build_macrocycle, render_week, MacroInput  # noqa: E40
 
 @pytest.fixture
 def tmp_conn():
-    """schema.sql + migracja 011. Nie używamy conftest.tmp_conn: odpalanie 008 na
+    """schema.sql + migracje 011-012. Nie używamy conftest.tmp_conn: odpalanie 008 na
     już-finalnej schemie zostawia FK components → _planned_workouts_old."""
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript((ROOT / "db" / "schema.sql").read_text(encoding="utf-8"))
-    conn.executescript((ROOT / "db" / "migrations" / "011_training_goals_macro.sql").read_text(encoding="utf-8"))
+    for mig in ("011_training_goals_macro.sql", "012_macro_plan_detail.sql"):
+        conn.executescript((ROOT / "db" / "migrations" / mig).read_text(encoding="utf-8"))
     yield conn
     conn.close()
 
@@ -81,3 +82,31 @@ def test_write_week_keeps_gym_and_done(tmp_conn):
     assert "Stary easy do nadpisania" not in titles
     assert "2026-11-23" in res["skipped_dates"]              # nie dubluj wykonanego easy
     assert res["inserted"] == len(days) - 1
+
+
+def test_macro_now_with_rules_paces_and_shadow(tmp_conn):
+    from planner import plan_detail
+    _seed(tmp_conn)
+    goal = {"name": "M", "race_date": "2027-04-18", "distance_km": 42.195, "target_time_sec": 12600,
+            "start_date": MON.isoformat(), "baseline_km": 40, "peak_km": 68, "runs_per_week": 5,
+            "source": "ai-panel"}
+    weeks = [{"week_start": "2026-11-23", "phase": "base", "target_km": 47, "long_km": 17,
+              "long_structure": "17 E", "key_session": "T 3x2 km", "quality": []},
+             {"week_start": "2026-11-30", "phase": "base", "target_km": 50, "long_km": 19, "quality": []}]
+    gid = repo.save_goal(tmp_conn, 1, goal, weeks)
+    shadow = repo.save_goal(tmp_conn, 1, {**goal, "status": "shadow", "source": "deterministic"}, weeks)
+    plan_detail.add_rules(tmp_conn, 1, gid, [
+        {"rule_type": "ban", "subject": "sprint", "valid_from": "2026-11-23", "valid_to": "2027-02-01"},
+        {"rule_type": "cap", "subject": "quality", "valid_to": "2026-11-01"}])   # już nieważna
+    plan_detail.add_paces(tmp_conn, 1, gid, [
+        {"zone": "M", "min_sec": 300, "max_sec": 305, "valid_from": "2026-11-23"},
+        {"zone": "M", "min_sec": 295, "max_sec": 300, "valid_from": "2027-03-08"}])
+    plan_detail.add_revision(tmp_conn, 1, gid, "created", "panel AI")
+    now = plan_detail.macro_now(tmp_conn, 1, TODAY)
+    assert now["goal"]["id"] == gid and now["goal"]["source"] == "ai-panel"
+    assert now["this_week"]["key_session"] == "T 3x2 km" and now["next_week"]["target_km"] == 50
+    assert [r["subject"] for r in now["rules"]] == ["sprint"]
+    assert now["paces"][0]["min_sec"] == 300                    # tempo z marca jeszcze nie obowiązuje
+    assert len(now["revisions"]) == 1
+    assert repo.load_context(tmp_conn, 1, TODAY)["goal"]["id"] == gid   # shadow nie podmienia aktywnego
+    assert shadow != gid
