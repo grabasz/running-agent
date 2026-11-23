@@ -47,13 +47,15 @@ def _classify_run_type(activity: dict) -> str:
     return "Easy"  # default
 
 
-def save_run(activity: dict, splits: dict | None = None, run_type: str | None = None) -> int:
+def save_run(activity: dict, splits: dict | None = None, run_type: str | None = None,
+             user_id: int = 1) -> int:
     """Save Garmin run to DB. Returns run_id.
 
     Args:
         activity: single element from list-activities or get-activity-details (activitySummary)
         splits: response from get-activity-splits (contains lapDTOs); optional
         run_type: override auto-classification (Easy/Tempo/Interval/Race/Long/Recovery/Shakeout)
+        user_id: owner of the run (multi-tenant; queries require it since migration 008)
     """
     aid = activity["activityId"]
     dist_km = (activity.get("distance") or 0) / 1000
@@ -81,7 +83,7 @@ def save_run(activity: dict, splits: dict | None = None, run_type: str | None = 
         # so the UPSERT below targets that row and enriches it with Garmin-only columns
         # (running dynamics, training effect, body battery, etc.) — keeping the strava_id intact.
         existing = api.runs.find_by_date_and_distance(conn,
-            date=date, distance_km=dist_km, tolerance=0.1)
+            date=date, distance_km=dist_km, tolerance=0.1, user_id=user_id)
         if existing and existing["source"] == "strava" and not existing["garmin_activity_id"]:
             conn.execute(
                 "UPDATE runs SET garmin_activity_id = ?, source = 'garmin' WHERE id = ?",
@@ -135,6 +137,8 @@ def save_run(activity: dict, splits: dict | None = None, run_type: str | None = 
         # Look up id via garmin_activity_id.
         row = conn.execute("SELECT id FROM runs WHERE garmin_activity_id = ?", (aid,)).fetchone()
         run_id = row["id"]
+        # run_upsert_garmin nie ma kolumny user_id (DEFAULT 1) — ustaw właściciela jawnie.
+        conn.execute("UPDATE runs SET user_id = ? WHERE id = ?", (user_id, run_id))
 
         # 2. Laps (if splits provided)
         if splits and splits.get("lapDTOs"):
@@ -163,7 +167,7 @@ def save_run(activity: dict, splits: dict | None = None, run_type: str | None = 
 
     # Auto-link to planned workout for the same date (if any)
     with api.connect() as conn:
-        match = api.planned.auto_link_run_for_date(conn, date=date)
+        match = api.planned.auto_link_run_for_date(conn, date=date, user_id=user_id)
         if match:
             api.planned.link_actual_run(conn, id=match["id"], run_id=run_id)
 
