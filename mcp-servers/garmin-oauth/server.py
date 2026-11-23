@@ -33,6 +33,7 @@ from db_common import USER_ID, TOKEN_DIR, _seed_tokens_from_env
 from garmin import register_garmin_tools
 from db_read import register_db_read_tools
 from db_write import register_db_write_tools
+from db_macro import register_db_macro_tools
 
 
 mcp = FastMCP(
@@ -41,6 +42,7 @@ mcp = FastMCP(
 Two domains: GARMIN (device + external service) and DB (Turso — source of truth for training plan + history).
 
 DECISION RULES:
+- "makroplan / plan do maratonu / ile km w tym tygodniu wg planu / jak idę vs plan" → DB: db-macro-now, db-macro-adherence
 - "co ma zaplanowane / plan tygodnia / na jutro"   → DB: db-planned-for-date, db-week-plan
 - "ostatni bieg / splity / jak poszło"             → GARMIN: get-last-run (server-side filter — DO NOT use list-activities + client filter)
 - "aktualny VDOT / tempa treningowe"               → DB: db-current-vdot
@@ -63,6 +65,7 @@ DECISION RULES:
 - "sen / HRV / body battery / training readiness"  → GARMIN: get-sleep, get-hrv, get-body-battery, get-training-readiness
 
 PLANNING NEXT WEEK (workflow):
+0. Makroplan: db-macro-now (cel, km/long/akcenty tygodnia, reguły, tempa) — plan tygodnia MUSI się z nim zgadzać; odstępstwa zgłoś userowi.
 1. Assess: db-current-vdot + db-recent-runs(days=14) + db-body-state(days=14) + db-weekly-volume(weeks=4) + db-form-trend(weeks=8)
 2. Read allowed types: db-workout-types
 3. **Preferuj bulk**: db-plan-week-bulk(week_start, days=[...], replace=True) — 1 call zamiast 7 (mobile ekonomia tokenów).
@@ -100,6 +103,7 @@ INVARIANTS:
 register_garmin_tools(mcp)
 register_db_read_tools(mcp)
 register_db_write_tools(mcp)
+register_db_macro_tools(mcp)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,9 @@ import streamlit as st
 from dashboard.helpers import fmt_time
 from dashboard.macro_chart import render_progress_chart
 from dashboard.macro_data import (q_macro_context, q_reference_weeks, replan_from_today,
-                                  week_preview, save_goal_action, write_week_action)
+                                  week_preview, save_goal_action, write_week_action,
+                                  q_shadow_weeks, q_macro_now, to_week)
+from dashboard.pages.macro_plan_view import render_this_week, render_plan_table, render_rules
 from dashboard.queries import q_races_upcoming
 from dashboard.utils import get_user_id
 from planner import adherence, goal_progress, replan_advice, baseline_from_actual, monday
@@ -116,9 +118,21 @@ def page_macro():
     prog = goal_progress(ctx["vdot"], goal["distance_km"] or 21.0975, goal["target_time_sec"], race_date, today)
     adh = adherence(reference, ctx["actual_km"], today)
     _kpis(ctx, goal, prog, adh)
-    replan = replan_from_today(ctx, goal, today)
+    now = q_macro_now(user_id, today.isoformat())
+    render_this_week(now)
+    shadow = q_shadow_weeks(user_id)
+    if shadow:   # plan AI aktywny + deterministyczny do porównania (i jako źródło generatora)
+        this_monday = monday(today).isoformat()
+        replan = [to_week(d) for d in shadow if d["week_start"] >= this_monday]
+        names = {"ref_name": f"Plan aktywny ({goal.get('source') or 'ref'})",
+                 "replan_name": "Plan deterministyczny"}
+    else:
+        replan = replan_from_today(ctx, goal, today)
+        names = {}
     st.plotly_chart(render_progress_chart(reference, ctx["actual_km"], [w.to_dict() for w in replan],
-                                          monday(today).isoformat()), use_container_width=True)
+                                          monday(today).isoformat(), **names), use_container_width=True)
+    render_plan_table(reference, shadow)
+    render_rules(now)
     for tip in replan_advice(adh, ctx["max_pain_7d"]):
         st.markdown(f"- {tip}")
     with st.expander("📋 Tabela: plan vs wykonanie"):

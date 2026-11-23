@@ -12,7 +12,8 @@ import streamlit as st
 import api  # type: ignore
 from planner import (MacroInput, build_macrocycle, monday, render_week, apply_safety,
                      baseline_from_actual)
-from planner import repo
+from planner import repo, plan_detail
+from planner.macro import WeekTarget
 
 
 @st.cache_data(ttl=30)
@@ -25,6 +26,29 @@ def q_macro_context(user_id: int, today_iso: str) -> dict:
 def q_reference_weeks(user_id: int, goal_id: int) -> list[dict]:
     with api.connect() as conn:
         return repo.reference_weeks(conn, user_id, goal_id)
+
+
+@st.cache_data(ttl=60)
+def q_shadow_weeks(user_id: int) -> list[dict]:
+    """Plan porównawczy (status 'shadow', np. deterministyczny obok planu AI)."""
+    with api.connect() as conn:
+        g = api.macro.goal_by_status(conn, user_id=user_id, status="shadow")
+        return repo.reference_weeks(conn, user_id, g["id"]) if g else []
+
+
+@st.cache_data(ttl=60)
+def q_macro_now(user_id: int, today_iso: str) -> dict | None:
+    with api.connect() as conn:
+        return plan_detail.macro_now(conn, user_id, date.fromisoformat(today_iso))
+
+
+def to_week(d: dict) -> WeekTarget:
+    """Tydzień z DB → WeekTarget (generator dni pracuje na dataclass)."""
+    return WeekTarget(week_start=date.fromisoformat(d["week_start"]), phase=d["phase"],
+                      week_in_phase=d["week_in_phase"], is_deload=bool(d["is_deload"]),
+                      target_km=d["target_km"], long_km=d["long_km"] or 0.0,
+                      quality=d.get("quality") or [], is_race_week=bool(d["is_race_week"]),
+                      tune_up="B" if any(q["kind"] == "race" for q in d.get("quality") or []) else None)
 
 
 def macro_input(ctx: dict, goal: dict, start: date, baseline_km: float | None = None) -> MacroInput:

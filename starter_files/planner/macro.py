@@ -11,6 +11,8 @@ from datetime import date, timedelta
 
 from planner import methodology as M
 from planner.paces import training_paces, pace_range
+from planner.events import TuneUp, apply_tune_ups, apply_quality_caps, apply_kind_bans, smooth_long
+from planner.sessions import long_km as _long_km, quality as _quality
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,15 @@ class MacroInput:
     safety_max_km: float | None = None
     last_race: tuple[date, float] | None = None   # (data, km) → roztrenowanie
     horizon_weeks: int = 12              # gdy brak celu (maintenance)
+    progression: str = "daniels"         # daniels: +1.6 km/bieg co blok | weekly: min(+7%, +5 km)/tydz.
+    tune_ups: tuple[TuneUp, ...] = ()    # starty pośrednie B/C
+    quality_caps: tuple[tuple[date, int], ...] = ()   # ((do_daty, max_akcentów), ...)
+    long_start_km: float | None = None   # najdłuższy long z ostatnich tygodni
+    long_step_km: float | None = None    # max przyrost longa tydz/tydz (None = bez limitu)
+    long_cap_km: float | None = None     # twardy limit longa (reguła usera)
+    taper_factors: tuple[float, ...] | None = None    # nadpisanie tapera metodyki
+    kind_bans: tuple[tuple[str, date, str], ...] = ()  # ((kind, do_daty, zamiennik), ...)
+    forced_deloads: tuple[date, ...] = ()               # np. Święta — deload w tym tygodniu
 
 
 @dataclass
@@ -37,6 +48,7 @@ class WeekTarget:
     long_km: float
     quality: list[dict] = field(default_factory=list)   # [{"kind": "T", "km": 5.0}]
     is_race_week: bool = False
+    tune_up: str | None = None                          # "B"/"C" gdy w tygodniu start pośredni
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -95,30 +107,6 @@ def _phase_sequence(inp: MacroInput) -> list[str]:
     return [M.PHASE_RECOVERY] * n_rec + build + [M.PHASE_TAPER] * n_taper
 
 
-def _long_km(target_km: float, distance_km: float, long_pace_sec: int) -> float:
-    pct = M.LONG_PCT_LOW_VOLUME if target_km < M.LOW_VOLUME_KM else M.LONG_PCT
-    cap_time = M.LONG_MAX_MIN * 60 / long_pace_sec
-    cap_dist = M.by_distance(M.LONG_MAX_KM, distance_km)
-    return round(min(target_km * pct, cap_time, cap_dist), 1)
-
-
-def _quality(phase: str, family: str, target_km: float, deload: bool, race_week: bool) -> list[dict]:
-    if race_week:
-        return []
-    kinds = M.QUALITY_BY_PHASE[phase][family]
-    if deload or phase == M.PHASE_TAPER:
-        kinds = kinds[:1]
-    out = []
-    for kind in kinds:
-        if kind == "S":
-            out.append({"kind": "S", "km": 0.0})
-            continue
-        pct_cap, km_cap = M.QUALITY_CAPS[kind]
-        km = min(M.QUALITY_SHARE[kind] * target_km, pct_cap * target_km, km_cap)
-        out.append({"kind": kind, "km": round(km, 1)})
-    return out
-
-
 def build_macrocycle(inp: MacroInput) -> list[WeekTarget]:
     phases = _phase_sequence(inp)
     distance = inp.distance_km or 21.1
@@ -130,10 +118,14 @@ def build_macrocycle(inp: MacroInput) -> list[WeekTarget]:
     level = max(min(inp.baseline_km, peak), M.MIN_WEEK_KM)
     peak_reached = level
     long_pace = sum(pace_range("L", training_paces(inp.vdot))) // 2
-    taper_f = M.by_distance(M.TAPER_BY_DISTANCE, distance)
+    taper_f = list(inp.taper_factors or M.by_distance(M.TAPER_BY_DISTANCE, distance))
+    weekly = inp.progression == "weekly"
+    deload_factor = M.WEEKLY_DELOAD_FACTOR if weekly else M.DELOAD_FACTOR
     n_taper = phases.count(M.PHASE_TAPER)
     weeks: list[WeekTarget] = []
     build_idx = 0
+    b_weeks = {(monday(t.race_date) - inp.start).days // 7 for t in inp.tune_ups if t.priority == "B"}
+    forced = {(monday(d) - inp.start).days // 7 for d in inp.forced_deloads}
     for i, phase in enumerate(phases):
         ws = inp.start + timedelta(weeks=i)
         wip = 1 + sum(1 for p in phases[:i] if p == phase)
@@ -142,14 +134,21 @@ def build_macrocycle(inp: MacroInput) -> list[WeekTarget]:
             target = level * M.RECOVERY_WEEK_FACTORS[wip - 1]
         elif phase == M.PHASE_TAPER:
             target = peak_reached * taper_f[len(taper_f) - n_taper + wip - 1]
+        elif i in b_weeks:
+            target = level      # start B = odciążenie (apply_tune_ups liczy mini-taper)
+            build_idx = 0       # licznik deloadu od nowa, poziom bez wzrostu
         else:
             deload = build_idx % M.DELOAD_EVERY == M.DELOAD_EVERY - 1
             nxt = phases[i + 1] if i + 1 < len(phases) else None
-            if deload and nxt == M.PHASE_TAPER:
-                deload = False  # nie odciążaj tuż przed taperem — taper sam odciąża
-            target = level * (M.DELOAD_FACTOR if deload else 1.0)
+            if deload and (nxt == M.PHASE_TAPER or {i + 1, i + 2} & (b_weeks | forced)):
+                deload = False  # taper / start B / wymuszony deload tuż obok same odciążają
+            if i in forced:
+                deload, build_idx = True, M.DELOAD_EVERY - 1   # licznik: kolejny deload za 4 tyg.
+            target = level * (deload_factor if deload else 1.0)
             peak_reached = max(peak_reached, level)
-            if deload:
+            if weekly and not deload:
+                level = min(level * (1 + M.WEEKLY_STEP_PCT), level + M.WEEKLY_STEP_KM, peak)
+            elif deload and not weekly:
                 step = min(level * M.STEP_MAX_PCT, inp.runs_per_week * M.STEP_KM_PER_RUN)
                 level = min(level + step, peak)
             build_idx += 1
@@ -159,8 +158,14 @@ def build_macrocycle(inp: MacroInput) -> list[WeekTarget]:
         target = round(max(target, M.MIN_WEEK_KM), 1)
         weeks.append(WeekTarget(
             week_start=ws, phase=phase, week_in_phase=wip, is_deload=deload,
-            target_km=target, long_km=_long_km(target, distance, long_pace),
+            target_km=target,
+            long_km=0.0 if race_week else _long_km(target, distance, long_pace, inp.long_cap_km),
             quality=_quality(phase, family, target, deload, race_week),
             is_race_week=race_week,
         ))
+    apply_tune_ups(weeks, inp.tune_ups)
+    apply_kind_bans(weeks, inp.kind_bans)
+    apply_quality_caps(weeks, inp.quality_caps)
+    if inp.long_step_km:
+        smooth_long(weeks, inp.long_start_km, inp.long_step_km)
     return weeks

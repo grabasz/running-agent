@@ -114,13 +114,21 @@ def render_week(week: WeekTarget, vdot: float, prefs: dict | None = None, runs_p
         return _race_week(week, race_date, race_km or 21.1, run_days, paces)
     ws = week.week_start
     days: list[dict] = []
-    real_q = [q for q in week.quality if q["kind"] != "S"]
+    tune = [q for q in week.quality if q["kind"] == "race"]
+    real_q = [q for q in week.quality if q["kind"] not in ("S", "race")]
     strides = any(q["kind"] == "S" for q in week.quality)
-    for q, dow in zip(real_q, q_days):
+    blocked: set[int] = set()
+    for q in tune:   # start pośredni: dzień startu + dzień przed bez akcentu/longa
+        rd = date.fromisoformat(q["date"])
+        days.append({"date": q["date"], "kind": "RACE", "type_key": "race",
+                     "title": f"START {q['km']:g} km", "target_distance_km": q["km"],
+                     "target_pace_sec_per_km": None, "notes": "Start pośredni (B) — mini-taper"})
+        blocked |= {rd.weekday(), rd.weekday() - 1}
+    for q, dow in zip(real_q, [d for d in q_days if d not in blocked]):
         days.append(_quality_day(ws, dow, q, paces))
-    used = {date.fromisoformat(d["date"]).weekday() for d in days}
+    used = {date.fromisoformat(d["date"]).weekday() for d in days} | blocked
     long_km = _r(week.long_km)
-    if week.phase != M.PHASE_RECOVERY:
+    if week.phase != M.PHASE_RECOVERY and long_km > 0 and long_day not in used:
         days.append(_easy_day(ws, long_day, long_km, paces, "L"))
         used.add(long_day)
     easy_days = [d for d in run_days if d not in used]
