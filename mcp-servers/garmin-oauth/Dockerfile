@@ -9,7 +9,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server.py db_common.py garmin.py db_read.py db_write.py auth.py crypto.py ./
+COPY server.py db_common.py garmin.py db_read.py db_write.py db_macro.py auth.py crypto.py ./
 
 ENV TOKEN_DIR=/data/garminconnect
 ENV PORT=8000
